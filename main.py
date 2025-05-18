@@ -548,10 +548,6 @@ async def menu_help(message: Message):
 # Словарь для хранения ID пользователей, которые взаимодействовали с ботом
 active_users = set()
 
-@dp.message()
-async def track_users(message: Message):
-    active_users.add(message.from_user.id)
-
 @dp.message(Command("promote"))
 async def send_promotion(message: Message):
     if message.from_user.id != ADMIN_ID:
@@ -582,3 +578,7 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+@dp.message()
+async def track_users(message: Message):
+    active_users.add(message.from_user.id)
