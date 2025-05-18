@@ -32,7 +32,7 @@ main_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="📂 Каталог"), KeyboardButton(text="🛍 Корзина")],
         [KeyboardButton(text="📦 Мои заказы"), KeyboardButton(text="📢 Новости")],
-        [KeyboardButton(text="⚙️ Настройки"), KeyboardButton(text="❓ Помощь")]
+        [KeyboardButton(text="⭐️ Оставить отзыв"), KeyboardButton(text="❓ Помощь")]
     ],
     resize_keyboard=True
 )
