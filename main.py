@@ -18,7 +18,7 @@ daily_order_counter = {}
 # Связь между номером заказа и user_id
 order_number_to_user = {}
 
-API_TOKEN = "7582557120:AAHsoe7RYRjCbPV9EwNh5Ak6C9HmTZGRbRs"
+API_TOKEN = "7582557120:AAGJKYgjXIocys3aZyNaVQlp_k892ARKBz0"
 ADMIN_ID = 1648127193
 COURIERS_CHAT_ID = -1002297990202
 last_help_message_id = None
