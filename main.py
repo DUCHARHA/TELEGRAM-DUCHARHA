@@ -458,10 +458,44 @@ async def menu_news(message: Message):
     await message.delete()
     await message.answer("Нет новостей пока.")
 
+class ReviewState(StatesGroup):
+    waiting_for_rating = State()
+    waiting_for_text = State()
+
 @dp.message(F.text == "⭐️ Оставить отзыв")
-async def menu_reviews(message: Message):
+async def menu_reviews(message: Message, state: FSMContext):
     await message.delete()
-    await message.answer("Пожалуйста, оцените наш сервис от 1 до 5 звёзд и напишите ваш отзыв.")
+    kb = InlineKeyboardBuilder()
+    for i in range(1, 6):
+        kb.button(text="⭐" * i, callback_data=f"rate_{i}")
+    kb.adjust(5)
+    await message.answer("Пожалуйста, оцените наш сервис:", reply_markup=kb.as_markup())
+    await state.set_state(ReviewState.waiting_for_rating)
+
+@dp.callback_query(lambda c: c.data.startswith("rate_"))
+async def handle_rating(callback: types.CallbackQuery, state: FSMContext):
+    rating = int(callback.data.split("_")[1])
+    await state.update_data(rating=rating)
+    await callback.message.edit_text(f"Спасибо за оценку! ({rating}⭐)\nТеперь напишите ваш отзыв:")
+    await state.set_state(ReviewState.waiting_for_text)
+    await callback.answer()
+
+@dp.message(ReviewState.waiting_for_text)
+async def handle_review_text(message: Message, state: FSMContext):
+    data = await state.get_data()
+    rating = data.get("rating")
+    review_text = message.text
+    user_name = f"@{message.from_user.username}" if message.from_user.username else f"ID {message.from_user.id}"
+    
+    review_message = (
+        f"📝 Новый отзыв от {user_name}:\n"
+        f"Оценка: {'⭐' * rating}\n"
+        f"Отзыв: {review_text}"
+    )
+    
+    await bot.send_message(ADMIN_ID, review_message)
+    await message.answer("Спасибо за ваш отзыв! 💜", reply_markup=main_menu)
+    await state.clear()
 
 @dp.message(F.text == "❓ Помощь")
 async def menu_help(message: Message):
