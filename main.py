@@ -545,6 +545,37 @@ async def menu_help(message: Message):
         parse_mode=ParseMode.HTML
     )
     
+# Словарь для хранения ID пользователей, которые взаимодействовали с ботом
+active_users = set()
+
+@dp.message()
+async def track_users(message: Message):
+    active_users.add(message.from_user.id)
+
+@dp.message(Command("promote"))
+async def send_promotion(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+        
+    promo_text = message.text.replace("/promote", "").strip()
+    if not promo_text:
+        await message.answer("Использование: /promote <текст акции>")
+        return
+        
+    success_count = 0
+    for user_id in active_users:
+        try:
+            await bot.send_message(
+                user_id,
+                f"🎉 <b>Специальное предложение!</b>\n\n{promo_text}",
+                reply_markup=main_menu
+            )
+            success_count += 1
+        except Exception:
+            continue
+            
+    await message.answer(f"Уведомление отправлено {success_count} пользователям!")
+
 # === Запуск бота ===
 async def main():
     await dp.start_polling(bot)
