@@ -176,16 +176,12 @@ async def decrease_quantity(callback: types.CallbackQuery):
 async def remove_from_cart(callback: types.CallbackQuery):
     item_to_remove = callback.data.replace("remove_", "")
     user_id = callback.from_user.id
-    cart = user_carts.get(user_id, [])
+    cart = user_carts.get(user_id, {})
 
-    for i, (item, price) in enumerate(cart):
-        if item == item_to_remove:
-            cart.pop(i)
-            break
-
-    user_carts[user_id] = cart
-    await show_cart(callback)
-    await callback.answer(f"{item_to_remove} удалено из корзины.")
+    if item_to_remove in cart:
+        del cart[item_to_remove]
+        await show_cart(callback)
+        await callback.answer(f"{item_to_remove} удалено из корзины.")
 
 @dp.callback_query(lambda c: c.data == "cart")
 async def show_cart(callback: types.CallbackQuery):
@@ -378,7 +374,7 @@ async def go_back(callback: types.CallbackQuery):
 @dp.message(Command("cart"))
 async def cmd_cart(message: Message):
     user_id = message.from_user.id
-    cart = user_carts.get(user_id, [])
+    cart = user_carts.get(user_id, {})
     
     if not cart:
         await message.answer("🛒 Корзина пуста", reply_markup=main_menu)
@@ -386,18 +382,23 @@ async def cmd_cart(message: Message):
 
     text = "🛒 <b>Ваша корзина:</b>\n\n"
     total = 0
-    
-    for item, price in cart:
-        text += f"▪️ {item} — {price} сом\n"
-        total += price
-    
-    text += f"\n<b>Итого: {total} сом</b>"
-
     kb = InlineKeyboardBuilder()
     
-    for item, _ in cart:
-        kb.button(text=f"❌ Удалить {item}", callback_data=f"remove_{item}")
-        kb.adjust(1)  # Важно: делает кнопки вертикально
+    for item, data in cart.items():
+        price = data["price"]
+        qty = data["quantity"]
+        subtotal = price * qty
+        text += f"▪️ {item} — {qty} x {price} = {subtotal} сом\n"
+        total += subtotal
+
+        kb.row(
+            types.InlineKeyboardButton(text="➖", callback_data=f"decrease_{item}"),
+            types.InlineKeyboardButton(text=f"{qty}", callback_data="noop"),
+            types.InlineKeyboardButton(text="➕", callback_data=f"increase_{item}"),
+            types.InlineKeyboardButton(text="❌", callback_data=f"remove_{item}")
+        )
+    
+    text += f"\n<b>Итого: {total} сом</b>"
     
     kb.row(
         types.InlineKeyboardButton(text="🔙 Назад", callback_data="back"),
