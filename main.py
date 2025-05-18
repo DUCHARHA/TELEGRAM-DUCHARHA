@@ -430,7 +430,32 @@ async def cmd_contacts(message: Message):
 
 @dp.message(Command("help"))
 async def cmd_help(message: Message):
-    await message.answer("Напишите /start чтобы начать. Выберите категорию и оформите заказ.", reply_markup=main_menu)
+    help_text = """
+<b>Доступные команды:</b>
+/start - Начать покупки
+/search - Поиск товаров (например: /search яблоко)
+/cart - Показать корзину
+/orders - Показать мои заказы
+"""
+    await message.answer(help_text, reply_markup=main_menu)
+
+@dp.message(Command("search"))
+async def search_products(message: Message):
+    search_query = message.text.replace("/search", "").strip().lower()
+    if not search_query:
+        await message.answer("Пожалуйста, укажите что вы ищете. Например: /search яблоко")
+        return
+        
+    results = []
+    for category, items in products.items():
+        for item, price in items.items():
+            if search_query in item.lower():
+                results.append(f"▪️ {item} — {price} сом ({category.replace('category_', '').capitalize()})")
+    
+    if results:
+        await message.answer("🔍 Результаты поиска:\n\n" + "\n".join(results))
+    else:
+        await message.answer("По вашему запросу ничего не найдено 😔")
 
 @dp.message(F.text == "📂 Каталог")
 async def menu_catalog(message: Message):
