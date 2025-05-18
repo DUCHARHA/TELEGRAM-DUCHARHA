@@ -579,6 +579,12 @@ async def main():
 if __name__ == "__main__":
     asyncio.run(main())
 
+# Словарь для хранения ID пользователей, которые взаимодействовали с ботом
+active_users = set()
+
 @dp.message()
 async def track_users(message: Message):
-    active_users.add(message.from_user.id)
+    """Track all users who interact with the bot"""
+    if message.from_user and message.from_user.id:
+        active_users.add(message.from_user.id)
+        print(f"Added user {message.from_user.id} to active users")
