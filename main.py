@@ -458,10 +458,10 @@ async def menu_news(message: Message):
     await message.delete()
     await message.answer("Нет новостей пока.")
 
-@dp.message(F.text == "⚙️ Настройки")
-async def menu_settings(message: Message):
-    await message.delete ()
-    await message.answer("Нет настроек")
+@dp.message(F.text == "⭐️ Оставить отзыв")
+async def menu_reviews(message: Message):
+    await message.delete()
+    await message.answer("Пожалуйста, оцените наш сервис от 1 до 5 звёзд и напишите ваш отзыв.")
 
 @dp.message(F.text == "❓ Помощь")
 async def menu_help(message: Message):
