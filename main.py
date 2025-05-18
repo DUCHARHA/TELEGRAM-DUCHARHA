@@ -21,7 +21,15 @@ order_number_to_user = {}
 API_TOKEN = "7582557120:AAHsoe7RYRjCbPV9EwNh5Ak6C9HmTZGRbRs"
 ADMIN_ID = 1648127193
 COURIERS_CHAT_ID = -1002297990202
-last_help_message_id = None  # Добавьте это в начало с другими переменными
+last_help_message_id = None
+active_users = set()  # Перемещаем определение в начало файла
+
+@dp.message()
+async def track_users(message: Message):
+    """Track all users who interact with the bot"""
+    if message.from_user and message.from_user.id:
+        active_users.add(message.from_user.id)
+        print(f"Added user {message.from_user.id} to active users")
 
 bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher(storage=MemoryStorage())
@@ -545,16 +553,6 @@ async def menu_help(message: Message):
         parse_mode=ParseMode.HTML
     )
     
-# Словарь для хранения ID пользователей, которые взаимодействовали с ботом
-active_users = set()
-
-@dp.message()
-async def track_users(message: Message):
-    """Track all users who interact with the bot"""
-    if message.from_user and message.from_user.id:
-        active_users.add(message.from_user.id)
-        print(f"Added user {message.from_user.id} to active users")
-
 @dp.message(Command("promote"))
 async def send_promotion(message: Message):
     if message.from_user.id != ADMIN_ID:
