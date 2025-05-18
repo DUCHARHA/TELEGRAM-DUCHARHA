@@ -65,14 +65,18 @@ async def send_promotion(message: Message):
 
     await message.answer(status_message)
 
+# Инициализация роутера и диспетчера
+router = Router()
+dp.include_router(router)
+
+# Последний обработчик для отслеживания пользователей
 @dp.message()
 async def track_users(message: Message):
     """Track all users who interact with the bot"""
     if message.from_user and message.from_user.id:
         active_users.add(message.from_user.id)
         print(f"Added user {message.from_user.id} to active users")
-router = Router()
-dp.include_router(router)
+        return False  # Позволяем другим обработчикам обработать сообщение
 
 main_menu = ReplyKeyboardMarkup(
     keyboard=[
