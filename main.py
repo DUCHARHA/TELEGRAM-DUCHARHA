@@ -467,7 +467,7 @@ async def menu_reviews(message: Message, state: FSMContext):
     await message.delete()
     kb = InlineKeyboardBuilder()
     for i in range(1, 6):
-        kb.button(text="★" * i, callback_data=f"rate_{i}")
+        kb.button(text="⭐" * i, callback_data=f"rate_{i}")
     kb.adjust(5)
     await message.answer("Пожалуйста, оцените наш сервис:", reply_markup=kb.as_markup())
     await state.set_state(ReviewState.waiting_for_rating)
@@ -489,7 +489,7 @@ async def handle_review_text(message: Message, state: FSMContext):
     
     review_message = (
         f"📝 Новый отзыв от {user_name}:\n"
-        f"Оценка: {'★' * rating}\n"
+        f"Оценка: {'⭐' * rating}\n"
         f"Отзыв: {review_text}"
     )
     
