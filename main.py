@@ -18,65 +18,15 @@ daily_order_counter = {}
 # Связь между номером заказа и user_id
 order_number_to_user = {}
 
-API_TOKEN = "7582557120:AAGJKYgjXIocys3aZyNaVQlp_k892ARKBz0"
+API_TOKEN = "7582557120:AAHsoe7RYRjCbPV9EwNh5Ak6C9HmTZGRbRs"
 ADMIN_ID = 1648127193
 COURIERS_CHAT_ID = -1002297990202
-last_help_message_id = None
-active_users = set()
+last_help_message_id = None  # Добавьте это в начало с другими переменными
 
 bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher(storage=MemoryStorage())
-
-@dp.message(Command("promote"))
-async def send_promotion(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        await message.answer("У вас нет прав для использования этой команды.")
-        return
-
-    promo_text = message.text.replace("/promote", "").strip()
-    if not promo_text:
-        await message.answer("Использование: /promote <текст акции>")
-        return
-
-    success_count = 0
-    failed_count = 0
-
-    await message.answer("Начинаю рассылку...")
-
-    for user_id in active_users:
-        if user_id == ADMIN_ID:  # Пропускаем админа
-            continue
-        try:
-            await bot.send_message(
-                chat_id=user_id,
-                text=f"🎉 <b>Специальное предложение!</b>\n\n{promo_text}",
-                parse_mode=ParseMode.HTML,
-                reply_markup=main_menu
-            )
-            success_count += 1
-            print(f"Sent promotion to user {user_id}")
-        except Exception as e:
-            failed_count += 1
-            print(f"Failed to send to {user_id}: {str(e)}")
-
-    status_message = f"✅ Уведомление отправлено {success_count} пользователям\n"
-    if failed_count > 0:
-        status_message += f"❌ Не удалось отправить {failed_count} пользователям"
-
-    await message.answer(status_message)
-
-# Инициализация роутера и диспетчера
 router = Router()
 dp.include_router(router)
-
-# Последний обработчик для отслеживания пользователей
-@dp.message()
-async def track_users(message: Message):
-    """Track all users who interact with the bot"""
-    if message.from_user and message.from_user.id:
-        active_users.add(message.from_user.id)
-        print(f"Added user {message.from_user.id} to active users")
-        return False  # Позволяем другим обработчикам обработать сообщение
 
 main_menu = ReplyKeyboardMarkup(
     keyboard=[
@@ -353,7 +303,7 @@ async def get_phone(message: Message, state: FSMContext):
     order_number = daily_order_counter[today]
 
     order_number_to_user[message.from_user.id] = order_number
-
+    
     cart = user_carts.get(user_id, {})
     order_text = "\n".join(
         f"- {item} x {data['quantity']} = {data['price'] * data['quantity']} сом"
@@ -425,7 +375,7 @@ async def go_back(callback: types.CallbackQuery):
 async def cmd_cart(message: Message):
     user_id = message.from_user.id
     cart = user_carts.get(user_id, {})
-
+    
     if not cart:
         await message.answer("🛒 Корзина пуста", reply_markup=main_menu)
         return
@@ -433,7 +383,7 @@ async def cmd_cart(message: Message):
     text = "🛒 <b>Ваша корзина:</b>\n\n"
     total = 0
     kb = InlineKeyboardBuilder()
-
+    
     for item, data in cart.items():
         price = data["price"]
         qty = data["quantity"]
@@ -447,9 +397,9 @@ async def cmd_cart(message: Message):
             types.InlineKeyboardButton(text="➕", callback_data=f"increase_{item}"),
             types.InlineKeyboardButton(text="❌", callback_data=f"remove_{item}")
         )
-
+    
     text += f"\n<b>Итого: {total} сом</b>"
-
+    
     kb.row(
         types.InlineKeyboardButton(text="🔙 Назад", callback_data="back"),
         types.InlineKeyboardButton(text="✅ Оформить", callback_data="checkout")
@@ -474,7 +424,7 @@ async def cmd_orders(message: Message):
         await message.answer(response)
     else:
         await message.answer("У вас пока нет заказов.")
-
+        
 async def cmd_contacts(message: Message):
     await message.answer("Контакты магазина: @DilovarAhi", reply_markup=main_menu)
 
@@ -495,13 +445,13 @@ async def search_products(message: Message):
     if not search_query:
         await message.answer("Пожалуйста, укажите что вы ищете. Например: /search яблоко")
         return
-
+        
     results = []
     for category, items in products.items():
         for item, price in items.items():
             if search_query in item.lower():
                 results.append(f"▪️ {item} — {price} сом ({category.replace('category_', '').capitalize()})")
-
+    
     if results:
         await message.answer("🔍 Результаты поиска:\n\n" + "\n".join(results))
     else:
@@ -565,13 +515,13 @@ async def handle_review_text(message: Message, state: FSMContext):
     rating = data.get("rating")
     review_text = message.text
     user_name = f"@{message.from_user.username}" if message.from_user.username else f"ID {message.from_user.id}"
-
+    
     review_message = (
         f"📝 Новый отзыв от {user_name}:\n"
         f"Оценка: {'⭐' * rating}\n"
         f"Отзыв: {review_text}"
     )
-
+    
     await bot.send_message(ADMIN_ID, review_message)
     await message.answer("Спасибо за ваш отзыв! 💜", reply_markup=main_menu)
     await state.clear()
@@ -584,7 +534,7 @@ async def menu_help(message: Message):
         text="💬 Написать в Telegram", 
         url="https://t.me/DilovarAhi"
     )
-
+    
     await message.answer(
         "<b>📞 Контакты поддержки</b>\n\n"
         "Служба поддержки ДУЧАРХА 💜:\n"
@@ -594,7 +544,33 @@ async def menu_help(message: Message):
         reply_markup=kb.as_markup(),
         parse_mode=ParseMode.HTML
     )
+    
+# Словарь для хранения ID пользователей, которые взаимодействовали с ботом
+active_users = set()
 
+@dp.message(Command("promote"))
+async def send_promotion(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+        
+    promo_text = message.text.replace("/promote", "").strip()
+    if not promo_text:
+        await message.answer("Использование: /promote <текст акции>")
+        return
+        
+    success_count = 0
+    for user_id in active_users:
+        try:
+            await bot.send_message(
+                user_id,
+                f"🎉 <b>Специальное предложение!</b>\n\n{promo_text}",
+                reply_markup=main_menu
+            )
+            success_count += 1
+        except Exception:
+            continue
+            
+    await message.answer(f"Уведомление отправлено {success_count} пользователям!")
 
 # === Запуск бота ===
 async def main():
@@ -602,3 +578,13 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+# Словарь для хранения ID пользователей, которые взаимодействовали с ботом
+active_users = set()
+
+@dp.message()
+async def track_users(message: Message):
+    """Track all users who interact with the bot"""
+    if message.from_user and message.from_user.id:
+        active_users.add(message.from_user.id)
+        print(f"Added user {message.from_user.id} to active users")
