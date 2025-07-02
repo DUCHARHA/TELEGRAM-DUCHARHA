@@ -1,0 +1,113 @@
+
+Дополнительные возможности, которые можно добавить:
+
+Геолокация курьера (если есть API)
+SMS-уведомления через сторонние сервисы
+Персонализированные времена доставки по районам
+Рейтинг качества доставки
+Какую из этих функций хотели бы реализовать дальше?
+
+
+Scroll to latest
+Assistant mode
+
+advanced
+Claude 4.0 Sonnet
+Что сейчас будет, если 
+        url="https://t.me/DilovarAkhi" # Make sure this is the correct contact
+            print(f"Failed to send promo to {user_id}: {e}")
+            failed_count += 1
+
+        await asyncio.sleep(0.1) # Small delay to avoid hitting Telegram limits too hard
+
+    await message.answer(f"📢 Рассылка завершена!\n✅ Успешно отправлено: {success_count}\n❌ Не удалось отправить: {failed_count}")
+
+# --- Bot Startup ---
+@dp.callback_query(lambda c: c.data.startswith("status_"))
+async def handle_status_update(callback: types.CallbackQuery):
+    try:
+        parts = callback.data.split("_", 2)  # Split only on first 2 underscores
+        if len(parts) < 3:
+            raise ValueError("Invalid callback data format")
+        
+        _, order_number, new_status = parts
+        
+        # Convert callback data status to enum name
+        status_mapping = {
+            "preparing": "PREPARING",
+            "on_the_way": "ON_THE_WAY", 
+            "delivered": "DELIVERED"
+        }
+        
+        if new_status not in status_mapping:
+            await callback.answer("Неверный статус заказа", show_alert=True)
+            return
+            
+        new_status = status_mapping[new_status]
+
+        if new_status not in [status.name for status in OrderStatus]:
+            await callback.answer("Неверный статус заказа", show_alert=True)
+            return
+
+        # Find the order and update its status
+        found = False
+        for user_id, orders_list in user_orders.items():
+            for order in orders_list:
+                if order["order_number"] == order_number:
+                    old_status = order["status"]
+                    order["status"] = OrderStatus[new_status]
+                    found = True
+
+                    # Notify the customer
+                    notification = f"🔔 <b>Обновление статуса заказа #{order_number}</b>\n{OrderStatus[new_status].value}"
+                    await bot.send_message(user_id, notification)
+
+                    # Update buttons in admin/courier messages
+                    status_kb = InlineKeyboardBuilder()
+                    remaining_statuses = []
+                    if new_status == "PREPARING":
+                        remaining_statuses = ["on_the_way", "delivered"]
+                    elif new_status == "ON_THE_WAY":
+                        remaining_statuses = ["delivered"]
+
+                    for status in remaining_statuses:
+                        button_text = "🚗 Отдать курьеру" if status == "on_the_way" else "✅ Доставлен"
+                        status_kb.button(text=button_text, callback_data=f"status_{order_number}_{status}")
+
+                    new_message_text = callback.message.text + f"\n\n<b>Текущий статус:</b> {OrderStatus[new_status].value}"
+
+                    if remaining_statuses:
+                        await callback.message.edit_text(new_message_text, reply_markup=status_kb.adjust(1).as_markup())
+                    else:
+                        await callback.message.edit_text(new_message_text)
+
+                    break
+            if found:
+                break
+
+        if not found:
+            await callback.answer("Заказ не найден", show_alert=True)
+            return
+
+        await callback.answer("Статус заказа обновлен")
+
+    except Exception as e:
+        print(f"Error updating order status: {e}")
+        await callback.answer("Произошла ошибка при обновлении статуса", show_alert=True)
+
+async def main():
+    print("Bot is starting...")
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    keep_alive() # If you are using a service like Replit to keep the bot alive
+    asyncio.run(main())
+
+10m
+ • 
+13 minutes ago
+Preview your app here
+The app is currently not running.
+
+Run
+to see the results of your app.
