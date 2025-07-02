@@ -939,6 +939,18 @@ async def handle_status_update(callback: types.CallbackQuery):
                 f"🚗 <b>Заказ #{order_number} взят курьером</b>\n"
                 f"Курьер: {courier_mention}"
             )
+            
+            # Notify courier about anonymous chat availability
+            courier_kb = InlineKeyboardBuilder()
+            courier_kb.button(text="💬 Анонимный чат с клиентом", url="https://t.me/Ducharhachat_bot")
+            
+            await bot.send_message(
+                courier_id,
+                f"🚗 <b>Вы взяли заказ #{order_number}</b>\n\n"
+                f"Для связи с клиентом используйте анонимный чат.\n"
+                f"Это обеспечит безопасность ваших личных данных.",
+                reply_markup=courier_kb.as_markup()
+            )
 
         # Find the order and update its status
         found = False
@@ -983,7 +995,7 @@ async def handle_status_update(callback: types.CallbackQuery):
                         if assigned_courier_id:
                             # Создаем анонимный чат
                             await create_anonymous_chat(order_number, user_id, assigned_courier_id)
-                            customer_kb.button(text="💬 Анонимный чат с курьером", callback_data=f"anonymous_chat_{order_number}")
+                            customer_kb.button(text="💬 Анонимный чат с курьером", url="https://t.me/Ducharhachat_bot")
                         else:
                             customer_kb.button(text="📞 Связаться с поддержкой", url="https://t.me/DilovarAkhi")
                         customer_kb.button(text="💬 Комментарий для курьера", callback_data=f"comment_for_courier_{order_number}")
@@ -1159,7 +1171,7 @@ async def open_anonymous_chat(callback: types.CallbackQuery):
     order_number = callback.data.replace("anonymous_chat_", "")
     
     kb = InlineKeyboardBuilder()
-    kb.button(text="💬 Открыть анонимный чат", url="https://t.me/@Ducharhachat_bot")  # Замените на username анонимного бота
+    kb.button(text="💬 Открыть анонимный чат", url="https://t.me/Ducharhachat_bot")
     
     await callback.message.answer(
         f"🔒 <b>Анонимный чат с курьером</b>\n"
