@@ -759,10 +759,6 @@ class ReviewState(StatesGroup):
 class CourierCommentState(StatesGroup):
     waiting_for_comment = State()
 
-# --- Courier Tracking ---
-courier_locations = {}  # {order_number: {"lat": X, "lon": Y, "timestamp": "...", "courier_name": "..."}}
-active_deliveries = {}  # {courier_id: order_number}
-
 @dp.message(F.text == "⭐️ Оставить отзыв")
 async def menu_reviews_start(message: Message, state: FSMContext): # Renamed
     # await message.delete()
@@ -854,39 +850,6 @@ async def menu_help_contact(message: Message): # Renamed
 
 active_users = set()
 
-
-@dp.message(Command("clear_deliveries"))
-async def clear_completed_deliveries(message: Message):
-    """Clear completed deliveries from tracking (admin only)"""
-    if message.from_user.id != ADMIN_ID:
-        await message.reply("Эта команда доступна только администратору.")
-        return
-    
-    # Remove deliveries that are marked as delivered
-    orders_to_remove = []
-    for order_number in list(courier_locations.keys()):
-        # Check if order is delivered
-        for user_id, orders_list in user_orders.items():
-            for order in orders_list:
-                if order["order_number"] == order_number and order["status"] == OrderStatus.DELIVERED:
-                    orders_to_remove.append(order_number)
-                    break
-    
-    # Remove from active tracking
-    for order_number in orders_to_remove:
-        if order_number in courier_locations:
-            del courier_locations[order_number]
-        
-        # Remove from active deliveries
-        couriers_to_remove = []
-        for courier_id, active_order in active_deliveries.items():
-            if active_order == order_number:
-                couriers_to_remove.append(courier_id)
-        
-        for courier_id in couriers_to_remove:
-            del active_deliveries[courier_id]
-    
-    await message.answer(f"✅ Очищено {len(orders_to_remove)} завершенных доставок из системы отслеживания.")
 
 @dp.message(Command("promote"))
 async def send_promotion(message: Message):
@@ -994,10 +957,8 @@ async def handle_status_update(callback: types.CallbackQuery):
                     # Add quick action buttons for customer
                     customer_kb = InlineKeyboardBuilder()
                     if new_status == "ON_THE_WAY":
-                        customer_kb.button(text="📍 Отследить курьера", callback_data=f"track_courier_{order_number}")
                         customer_kb.button(text="📞 Связаться с курьером", url="https://t.me/DilovarAkhi")
                         customer_kb.button(text="💬 Комментарий для курьера", callback_data=f"comment_for_courier_{order_number}")
-                        customer_kb.adjust(1)  # Each button on separate row
                     elif new_status == "DELIVERED":
                         customer_kb.button(text="⭐ Оценить доставку", callback_data=f"rate_delivery_{order_number}")
                         customer_kb.button(text="🔄 Повторить заказ", callback_data="repeat_order")
@@ -1015,8 +976,6 @@ async def handle_status_update(callback: types.CallbackQuery):
                         remaining_statuses = ["on_the_way", "delivered"]
                     elif new_status == "ON_THE_WAY":
                         remaining_statuses = ["delivered"]
-                        # Add location sharing button for couriers
-                        status_kb.button(text="📍 Поделиться геолокацией", callback_data=f"share_location_{order_number}")
 
                     for status in remaining_statuses:
                         button_text = "🚗 Отдать курьеру" if status == "on_the_way" else "✅ Доставлен"
@@ -1024,31 +983,10 @@ async def handle_status_update(callback: types.CallbackQuery):
 
                     new_message_text = callback.message.text + f"\n\n<b>Текущий статус:</b> {OrderStatus[new_status].value}"
 
-                    if remaining_statuses or new_status == "ON_THE_WAY":
+                    if remaining_statuses:
                         await callback.message.edit_text(new_message_text, reply_markup=status_kb.adjust(1).as_markup())
                     else:
                         await callback.message.edit_text(new_message_text)
-
-                    # Notify courier about location sharing when order goes "on the way"
-                    if new_status == "ON_THE_WAY":
-                        courier_notification = (
-                            f"🚗 <b>Заказ #{order_number} передан вам для доставки</b>\n\n"
-                            f"Для улучшения сервиса, пожалуйста, поделитесь своей геолокацией с клиентом.\n"
-                            f"Используйте кнопку 'Поделиться геолокацией' в сообщении о заказе."
-                        )
-                        try:
-                            # Send to courier group chat
-                            await bot.send_message(COURIERS_CHAT_ID, courier_notification)
-                            
-                            # Also send personal reminder to courier if they clicked the button
-                            if hasattr(callback, 'from_user'):
-                                await bot.send_message(
-                                    callback.from_user.id,
-                                    f"🚗 <b>Напоминание:</b> Заказ #{order_number} передан вам для доставки.\n"
-                                    f"Не забудьте поделиться геолокацией с клиентом для отслеживания!"
-                                )
-                        except Exception as e:
-                            print(f"Error sending courier notification: {e}")
 
                     break
             if found:
@@ -1168,185 +1106,6 @@ async def cancel_courier_comment(callback: types.CallbackQuery, state: FSMContex
     await state.clear()
     await callback.message.edit_text("Отправка комментария отменена.")
     await callback.answer("Комментарий отменен.")
-
-# --- Courier Tracking Handlers ---
-@dp.callback_query(lambda c: c.data.startswith("share_location_"))
-async def request_courier_location(callback: types.CallbackQuery):
-    order_number = callback.data.replace("share_location_", "")
-    courier_id = callback.from_user.id
-    
-    # Store active delivery for this courier
-    active_deliveries[courier_id] = order_number
-    
-    # Send location request to courier's private chat
-    kb = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📍 Отправить мою геолокацию", request_location=True)],
-            [KeyboardButton(text="❌ Отмена")]
-        ],
-        resize_keyboard=True,
-        one_time_keyboard=True
-    )
-    
-    try:
-        # Send to courier's private chat instead of group chat
-        await bot.send_message(
-            courier_id,
-            f"🚗 Для отслеживания заказа #{order_number} отправьте вашу текущую геолокацию:",
-            reply_markup=kb
-        )
-        await callback.answer("✅ Запрос на геолокацию отправлен в ваш приватный чат!")
-    except Exception as e:
-        print(f"Error sending location request to courier {courier_id}: {e}")
-        await callback.answer("❌ Не удалось отправить запрос. Убедитесь, что вы написали боту в личные сообщения.", show_alert=True)
-
-@dp.message(F.location)
-async def handle_courier_location(message: Message):
-    courier_id = message.from_user.id
-    
-    # Check if this courier has an active delivery
-    if courier_id not in active_deliveries:
-        return
-    
-    order_number = active_deliveries[courier_id]
-    latitude = message.location.latitude
-    longitude = message.location.longitude
-    
-    # Store location data
-    courier_locations[order_number] = {
-        "lat": latitude,
-        "lon": longitude,
-        "timestamp": datetime.now().isoformat(),
-        "courier_name": message.from_user.first_name or "Курьер"
-    }
-    
-    # Create map links
-    google_maps_link = f"https://www.google.com/maps?q={latitude},{longitude}"
-    yandex_maps_link = f"https://yandex.ru/maps/?ll={longitude}%2C{latitude}&z=16&l=map"
-    
-    # Confirm to courier
-    await message.answer(
-        f"✅ Ваша геолокация для заказа #{order_number} отправлена клиенту!",
-        reply_markup=ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text="🔄 Обновить геолокацию")]],
-            resize_keyboard=True
-        )
-    )
-    
-    # Find and notify customer
-    for user_id, orders_list in user_orders.items():
-        for order in orders_list:
-            if order["order_number"] == order_number:
-                tracking_kb = InlineKeyboardBuilder()
-                tracking_kb.button(text="🗺 Открыть в Google Maps", url=google_maps_link)
-                tracking_kb.button(text="🗺 Открыть в Яндекс.Картах", url=yandex_maps_link)
-                tracking_kb.button(text="🔄 Обновить позицию", callback_data=f"update_location_{order_number}")
-                tracking_kb.adjust(1)
-                
-                await bot.send_message(
-                    user_id,
-                    f"📍 <b>Геолокация курьера для заказа #{order_number}</b>\n\n"
-                    f"🚗 Курьер: {courier_locations[order_number]['courier_name']}\n"
-                    f"⏰ Обновлено: {datetime.now().strftime('%H:%M')}\n\n"
-                    f"Вы можете отследить курьера на карте:",
-                    reply_markup=tracking_kb.as_markup()
-                )
-                break
-        break
-
-@dp.callback_query(lambda c: c.data.startswith("track_courier_"))
-async def show_courier_tracking(callback: types.CallbackQuery):
-    order_number = callback.data.replace("track_courier_", "")
-    
-    if order_number in courier_locations:
-        location_data = courier_locations[order_number]
-        lat, lon = location_data["lat"], location_data["lon"]
-        
-        google_maps_link = f"https://www.google.com/maps?q={lat},{lon}"
-        yandex_maps_link = f"https://yandex.ru/maps/?ll={lon}%2C{lat}&z=16&l=map"
-        
-        tracking_kb = InlineKeyboardBuilder()
-        tracking_kb.button(text="🗺 Google Maps", url=google_maps_link)
-        tracking_kb.button(text="🗺 Яндекс.Карты", url=yandex_maps_link)
-        tracking_kb.button(text="🔄 Обновить", callback_data=f"update_location_{order_number}")
-        tracking_kb.adjust(2, 1)
-        
-        last_update = datetime.fromisoformat(location_data["timestamp"])
-        time_ago = datetime.now() - last_update
-        minutes_ago = int(time_ago.total_seconds() / 60)
-        
-        await callback.message.answer(
-            f"📍 <b>Местоположение курьера</b>\n\n"
-            f"🚗 Курьер: {location_data['courier_name']}\n"
-            f"📦 Заказ: #{order_number}\n"
-            f"⏰ Обновлено: {minutes_ago} мин. назад\n\n"
-            f"Нажмите на кнопку ниже, чтобы открыть карту:",
-            reply_markup=tracking_kb.as_markup()
-        )
-    else:
-        await callback.message.answer(
-            f"📍 Курьер пока не поделился геолокацией для заказа #{order_number}.\n"
-            f"Мы уведомим вас, как только получим его местоположение!"
-        )
-    
-    await callback.answer()
-
-@dp.callback_query(lambda c: c.data.startswith("update_location_"))
-async def request_location_update(callback: types.CallbackQuery):
-    order_number = callback.data.replace("update_location_", "")
-    
-    # Find courier for this order
-    courier_found = False
-    for courier_id, active_order in active_deliveries.items():
-        if active_order == order_number:
-            try:
-                await bot.send_message(
-                    courier_id,
-                    f"🔄 <b>Запрос обновления геолокации</b>\n\n"
-                    f"Клиент запросил обновление вашего местоположения для заказа #{order_number}.\n"
-                    f"Пожалуйста, отправьте актуальную геолокацию.",
-                    reply_markup=ReplyKeyboardMarkup(
-                        keyboard=[[KeyboardButton(text="📍 Отправить геолокацию", request_location=True)]],
-                        resize_keyboard=True,
-                        one_time_keyboard=True
-                    )
-                )
-                courier_found = True
-                await callback.answer("✅ Запрос на обновление отправлен курьеру!")
-            except Exception as e:
-                print(f"Error sending location update request: {e}")
-                await callback.answer("❌ Не удалось связаться с курьером", show_alert=True)
-            break
-    
-    if not courier_found:
-        await callback.answer("Курьер для этого заказа не найден", show_alert=True)
-
-@dp.message(F.text == "🔄 Обновить геолокацию")
-async def quick_location_update(message: Message):
-    courier_id = message.from_user.id
-    
-    if courier_id in active_deliveries:
-        kb = ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text="📍 Отправить геолокацию", request_location=True)]],
-            resize_keyboard=True,
-            one_time_keyboard=True
-        )
-        await message.answer(
-            "📍 Отправьте вашу текущую геолокацию для обновления:",
-            reply_markup=kb
-        )
-    else:
-        await message.answer("У вас нет активных доставок для отслеживания.")
-
-@dp.message(F.text == "❌ Отмена")
-async def cancel_location_sharing(message: Message):
-    await message.answer(
-        "❌ Отправка геолокации отменена.",
-        reply_markup=ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text="🔄 Обновить геолокацию")]],
-            resize_keyboard=True
-        )
-    )
 
 # --- Order Reminder System ---
 async def send_order_reminders():
