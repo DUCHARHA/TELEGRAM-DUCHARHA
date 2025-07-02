@@ -755,6 +755,10 @@ class ReviewState(StatesGroup):
     waiting_for_rating = State()
     waiting_for_text = State()
 
+# --- Courier Comment FSM ---
+class CourierCommentState(StatesGroup):
+    waiting_for_comment = State()
+
 @dp.message(F.text == "⭐️ Оставить отзыв")
 async def menu_reviews_start(message: Message, state: FSMContext): # Renamed
     # await message.delete()
@@ -923,7 +927,7 @@ async def handle_status_update(callback: types.CallbackQuery):
                     order["status"] = OrderStatus[new_status]
                     found = True
 
-                    # Enhanced notification with time estimates and emojis
+                    # Enhanced notification with time estimates
                     status_messages = {
                         "PREPARING": {
                             "emoji": "🛒",
@@ -931,7 +935,7 @@ async def handle_status_update(callback: types.CallbackQuery):
                             "estimate": "Примерное время сборки: 1-2 минуты"
                         },
                         "ON_THE_WAY": {
-                            "emoji": "🚗",
+                            "emoji": "🚗", 
                             "message": "Ваш заказ в пути",
                             "estimate": "Примерное время доставки: 10-15 минут"
                         },
@@ -947,19 +951,23 @@ async def handle_status_update(callback: types.CallbackQuery):
                     message = status_info.get("message", OrderStatus[new_status].value)
                     estimate = status_info.get("estimate", "")
                     
-                    notification = f"{emoji} <b>Обновление статуса заказа #{order_number}</b>\n\n{message}\n{estimate}"
+                    # Send main notification without emoji in text
+                    notification = f"<b>Обновление статуса заказа #{order_number}</b>\n\n{message}\n{estimate}"
                     
                     # Add quick action buttons for customer
                     customer_kb = InlineKeyboardBuilder()
                     if new_status == "ON_THE_WAY":
                         customer_kb.button(text="📞 Связаться с курьером", url="https://t.me/DilovarAkhi")
-                        customer_kb.button(text="📍 Моя геолокация", callback_data=f"share_location_{order_number}")
+                        customer_kb.button(text="💬 Комментарий для курьера", callback_data=f"comment_for_courier_{order_number}")
                     elif new_status == "DELIVERED":
                         customer_kb.button(text="⭐ Оценить доставку", callback_data=f"rate_delivery_{order_number}")
                         customer_kb.button(text="🔄 Повторить заказ", callback_data="repeat_order")
                     
                     reply_markup = customer_kb.as_markup() if customer_kb.export() else None
                     await bot.send_message(user_id, notification, reply_markup=reply_markup)
+                    
+                    # Send emoji as separate message
+                    await bot.send_message(user_id, emoji)
 
                     # Update buttons in admin/courier messages
                     status_kb = InlineKeyboardBuilder()
@@ -995,20 +1003,16 @@ async def handle_status_update(callback: types.CallbackQuery):
         await callback.answer("Произошла ошибка при обновлении статуса", show_alert=True)
 
 # --- Customer Notification Handlers ---
-@dp.callback_query(lambda c: c.data.startswith("share_location_"))
-async def share_location_for_courier(callback: types.CallbackQuery):
-    order_number = callback.data.replace("share_location_", "")
-    kb = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📍 Отправить мою геолокацию курьеру", request_location=True)]
-        ],
-        resize_keyboard=True,
-        one_time_keyboard=True
-    )
+@dp.callback_query(lambda c: c.data.startswith("comment_for_courier_"))
+async def comment_for_courier(callback: types.CallbackQuery, state: FSMContext):
+    order_number = callback.data.replace("comment_for_courier_", "")
+    await state.update_data(comment_order_number=order_number)
     await callback.message.answer(
-        f"Отправьте вашу точную геолокацию для заказа #{order_number}, чтобы курьер мог вас быстрее найти:",
-        reply_markup=kb
+        f"Напишите комментарий для курьера по заказу #{order_number}:\n"
+        "(например: \"Звоните в домофон\", \"Жду у подъезда\", \"Квартира на 3 этаже\" и т.д.)",
+        reply_markup=InlineKeyboardBuilder().button(text="⬅️ Отмена", callback_data="cancel_comment").as_markup()
     )
+    await state.set_state(CourierCommentState.waiting_for_comment)
     await callback.answer()
 
 @dp.callback_query(lambda c: c.data.startswith("rate_delivery_"))
@@ -1064,6 +1068,44 @@ async def repeat_last_order(callback: types.CallbackQuery):
         reply_markup=InlineKeyboardBuilder().button(text="📂 К каталогу", callback_data="back_to_categories").as_markup()
     )
     await callback.answer()
+
+@dp.message(CourierCommentState.waiting_for_comment, F.text)
+async def process_courier_comment(message: Message, state: FSMContext):
+    data = await state.get_data()
+    order_number = data.get("comment_order_number")
+    comment = message.text
+    
+    if len(comment.strip()) < 3:
+        await message.reply("Комментарий слишком короткий. Напишите подробнее или отмените.",
+                           reply_markup=InlineKeyboardBuilder().button(text="⬅️ Отмена", callback_data="cancel_comment").as_markup())
+        return
+    
+    user_info = message.from_user
+    user_mention = f"@{user_info.username}" if user_info.username else f"ID {user_info.id}"
+    
+    # Send comment to admin and couriers
+    comment_notification = (
+        f"💬 <b>Комментарий клиента для курьера</b>\n"
+        f"<b>Заказ:</b> #{order_number}\n"
+        f"<b>Клиент:</b> {user_mention}\n"
+        f"<b>Комментарий:</b> {comment}"
+    )
+    
+    try:
+        await bot.send_message(ADMIN_ID, comment_notification)
+        await bot.send_message(COURIERS_CHAT_ID, comment_notification)
+        await message.answer("✅ Ваш комментарий передан курьеру!", reply_markup=main_menu)
+    except Exception as e:
+        print(f"Error sending courier comment: {e}")
+        await message.answer("Произошла ошибка при отправке комментария. Попробуйте позже.", reply_markup=main_menu)
+    
+    await state.clear()
+
+@dp.callback_query(F.data == "cancel_comment", CourierCommentState.waiting_for_comment)
+async def cancel_courier_comment(callback: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.edit_text("Отправка комментария отменена.")
+    await callback.answer("Комментарий отменен.")
 
 # --- Order Reminder System ---
 async def send_order_reminders():
