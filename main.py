@@ -11,6 +11,7 @@ from keep_alive import keep_alive # Assuming keep_alive.py is in the same direct
 from enum import Enum
 from aiogram.fsm.storage.memory import MemoryStorage
 from datetime import datetime, timedelta
+from anonymous_bot import create_anonymous_chat, start_anonymous_bot
 
 daily_order_counter = {} # Example: {"2023-10-27": 5}
 order_number_to_user = {} # Example: {user_id1: order_num1, user_id2: order_num2}
@@ -977,20 +978,14 @@ async def handle_status_update(callback: types.CallbackQuery):
                     # Add quick action buttons for customer
                     customer_kb = InlineKeyboardBuilder()
                     if new_status == "ON_THE_WAY":
-                        # Get assigned courier info for contact button
+                        # Создаем анонимный чат вместо прямой связи
                         assigned_courier_id = order_couriers.get(order_number)
                         if assigned_courier_id:
-                            try:
-                                courier_chat = await bot.get_chat(assigned_courier_id)
-                                if courier_chat.username:
-                                    courier_url = f"https://t.me/{courier_chat.username}"
-                                else:
-                                    courier_url = f"tg://user?id={assigned_courier_id}"
-                                customer_kb.button(text="📞 Связаться с курьером", url=courier_url)
-                            except:
-                                customer_kb.button(text="📞 Связаться с курьером", url="https://t.me/DilovarAkhi")
+                            # Создаем анонимный чат
+                            await create_anonymous_chat(order_number, user_id, assigned_courier_id)
+                            customer_kb.button(text="💬 Анонимный чат с курьером", callback_data=f"anonymous_chat_{order_number}")
                         else:
-                            customer_kb.button(text="📞 Связаться с курьером", url="https://t.me/DilovarAkhi")
+                            customer_kb.button(text="📞 Связаться с поддержкой", url="https://t.me/DilovarAkhi")
                         customer_kb.button(text="💬 Комментарий для курьера", callback_data=f"comment_for_courier_{order_number}")
                     elif new_status == "DELIVERED":
                         customer_kb.button(text="⭐ Оценить доставку", callback_data=f"rate_delivery_{order_number}")
@@ -1159,6 +1154,22 @@ async def cancel_courier_comment(callback: types.CallbackQuery, state: FSMContex
     await callback.message.edit_text("Отправка комментария отменена.")
     await callback.answer("Комментарий отменен.")
 
+@dp.callback_query(lambda c: c.data.startswith("anonymous_chat_"))
+async def open_anonymous_chat(callback: types.CallbackQuery):
+    order_number = callback.data.replace("anonymous_chat_", "")
+    
+    kb = InlineKeyboardBuilder()
+    kb.button(text="💬 Открыть анонимный чат", url="https://t.me/YOUR_ANONYMOUS_BOT_USERNAME")  # Замените на username анонимного бота
+    
+    await callback.message.answer(
+        f"🔒 <b>Анонимный чат с курьером</b>\n"
+        f"📦 Заказ: #{order_number}\n\n"
+        f"Для безопасного общения с курьером перейдите в анонимный бот.\n"
+        f"Ваши личные данные не будут переданы курьеру.",
+        reply_markup=kb.as_markup()
+    )
+    await callback.answer()
+
 # --- Order Reminder System ---
 async def send_order_reminders():
     """Send reminders for orders that haven't been updated in a while"""
@@ -1209,6 +1220,12 @@ async def main():
     print("Bot is starting...")
     # Start reminder scheduler in background
     asyncio.create_task(reminder_scheduler())
+    
+    # Start anonymous bot in background
+    asyncio.create_task(start_anonymous_bot())
+    print("Anonymous bot started...")
+    
+    # Start main bot
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
