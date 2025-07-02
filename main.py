@@ -10,7 +10,7 @@ import asyncio
 from keep_alive import keep_alive # Assuming keep_alive.py is in the same directory
 from enum import Enum
 from aiogram.fsm.storage.memory import MemoryStorage
-from datetime import datetime
+from datetime import datetime, timedelta
 
 daily_order_counter = {} # Example: {"2023-10-27": 5}
 order_number_to_user = {} # Example: {user_id1: order_num1, user_id2: order_num2}
@@ -572,7 +572,9 @@ async def process_phone_and_complete_order(message: Message, state: FSMContext):
         "status": OrderStatus.ACCEPTED,
         "details_for_user": user_confirmation_text, # Full text sent to user for /orders
         "details_for_admin": admin_notification_text, # For /active_orders
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
+        "user_id": user_id,  # Store user_id for reminders
+        "last_reminder": None  # Track last reminder sent
     })
 
 
@@ -921,9 +923,43 @@ async def handle_status_update(callback: types.CallbackQuery):
                     order["status"] = OrderStatus[new_status]
                     found = True
 
-                    # Notify the customer
-                    notification = f"🔔 <b>Обновление статуса заказа #{order_number}</b>\n{OrderStatus[new_status].value}"
-                    await bot.send_message(user_id, notification)
+                    # Enhanced notification with time estimates and emojis
+                    status_messages = {
+                        "PREPARING": {
+                            "emoji": "👨‍🍳",
+                            "message": "Ваш заказ готовится",
+                            "estimate": "Примерное время готовности: 15-20 минут"
+                        },
+                        "ON_THE_WAY": {
+                            "emoji": "🚗",
+                            "message": "Ваш заказ в пути",
+                            "estimate": "Примерное время доставки: 20-30 минут"
+                        },
+                        "DELIVERED": {
+                            "emoji": "✅",
+                            "message": "Ваш заказ доставлен",
+                            "estimate": "Спасибо за заказ! Ждем вас снова! 💜"
+                        }
+                    }
+                    
+                    status_info = status_messages.get(new_status, {})
+                    emoji = status_info.get("emoji", "🔔")
+                    message = status_info.get("message", OrderStatus[new_status].value)
+                    estimate = status_info.get("estimate", "")
+                    
+                    notification = f"{emoji} <b>Обновление статуса заказа #{order_number}</b>\n\n{message}\n{estimate}"
+                    
+                    # Add quick action buttons for customer
+                    customer_kb = InlineKeyboardBuilder()
+                    if new_status == "ON_THE_WAY":
+                        customer_kb.button(text="📞 Связаться с курьером", url="https://t.me/DilovarAkhi")
+                        customer_kb.button(text="📍 Моя геолокация", callback_data=f"share_location_{order_number}")
+                    elif new_status == "DELIVERED":
+                        customer_kb.button(text="⭐ Оценить доставку", callback_data=f"rate_delivery_{order_number}")
+                        customer_kb.button(text="🔄 Повторить заказ", callback_data="repeat_order")
+                    
+                    reply_markup = customer_kb.as_markup() if customer_kb.export() else None
+                    await bot.send_message(user_id, notification, reply_markup=reply_markup)
 
                     # Update buttons in admin/courier messages
                     status_kb = InlineKeyboardBuilder()
@@ -958,8 +994,127 @@ async def handle_status_update(callback: types.CallbackQuery):
         print(f"Error updating order status: {e}")
         await callback.answer("Произошла ошибка при обновлении статуса", show_alert=True)
 
+# --- Customer Notification Handlers ---
+@dp.callback_query(lambda c: c.data.startswith("share_location_"))
+async def share_location_for_courier(callback: types.CallbackQuery):
+    order_number = callback.data.replace("share_location_", "")
+    kb = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📍 Отправить мою геолокацию курьеру", request_location=True)]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+    await callback.message.answer(
+        f"Отправьте вашу точную геолокацию для заказа #{order_number}, чтобы курьер мог вас быстрее найти:",
+        reply_markup=kb
+    )
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data.startswith("rate_delivery_"))
+async def rate_delivery_quick(callback: types.CallbackQuery):
+    order_number = callback.data.replace("rate_delivery_", "")
+    kb = InlineKeyboardBuilder()
+    for i in range(1, 6):
+        kb.button(text="⭐" * i, callback_data=f"delivery_rate_{order_number}_{i}")
+    kb.adjust(5)
+    await callback.message.answer(
+        f"Оцените качество доставки заказа #{order_number}:",
+        reply_markup=kb.as_markup()
+    )
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data.startswith("delivery_rate_"))
+async def process_delivery_rating(callback: types.CallbackQuery):
+    parts = callback.data.split("_")
+    if len(parts) >= 4:
+        order_number = "_".join(parts[2:-1])  # Handle order numbers with underscores
+        rating = int(parts[-1])
+        
+        await callback.message.edit_text(
+            f"Спасибо за оценку! Вы поставили {rating} {'⭐' * rating} за доставку заказа #{order_number}"
+        )
+        
+        # Send rating to admin
+        user_info = callback.from_user
+        user_mention = f"@{user_info.username}" if user_info.username else f"ID {user_info.id}"
+        await bot.send_message(
+            ADMIN_ID,
+            f"📊 <b>Оценка доставки</b>\n"
+            f"Заказ: #{order_number}\n"
+            f"Клиент: {user_mention}\n"
+            f"Оценка: {'⭐' * rating} ({rating}/5)"
+        )
+    await callback.answer()
+
+@dp.callback_query(F.data == "repeat_order")
+async def repeat_last_order(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    user_specific_orders = user_orders.get(user_id, [])
+    
+    if not user_specific_orders:
+        await callback.message.answer("У вас пока нет заказов для повтора.")
+        await callback.answer()
+        return
+    
+    # Get last completed order
+    last_order = user_specific_orders[-1]
+    await callback.message.answer(
+        "Функция повтора заказа в разработке. Пока вы можете оформить новый заказ через каталог.",
+        reply_markup=InlineKeyboardBuilder().button(text="📂 К каталогу", callback_data="back_to_categories").as_markup()
+    )
+    await callback.answer()
+
+# --- Order Reminder System ---
+async def send_order_reminders():
+    """Send reminders for orders that haven't been updated in a while"""
+    current_time = datetime.now()
+    
+    for user_id, orders_list in user_orders.items():
+        for order in orders_list:
+            if order["status"] in [OrderStatus.ACCEPTED, OrderStatus.PREPARING]:
+                order_time = datetime.fromisoformat(order["timestamp"])
+                time_since_order = current_time - order_time
+                
+                # Send reminder if order is older than 30 minutes and no reminder sent yet
+                if time_since_order > timedelta(minutes=30) and not order.get("last_reminder"):
+                    try:
+                        reminder_text = f"⏰ <b>Напоминание о заказе #{order['order_number']}</b>\n\n"
+                        
+                        if order["status"] == OrderStatus.ACCEPTED:
+                            reminder_text += "Ваш заказ принят и ожидает обработки. Мы скоро начнем его готовить!"
+                        elif order["status"] == OrderStatus.PREPARING:
+                            reminder_text += "Ваш заказ готовится. Спасибо за терпение!"
+                        
+                        reminder_text += f"\n\nВремя с момента заказа: {int(time_since_order.total_seconds() // 60)} минут"
+                        
+                        await bot.send_message(user_id, reminder_text)
+                        order["last_reminder"] = current_time.isoformat()
+                        
+                        # Notify admin about delayed order
+                        await bot.send_message(
+                            ADMIN_ID,
+                            f"⚠️ <b>Заказ #{order['order_number']} требует внимания</b>\n"
+                            f"Статус: {order['status'].value}\n"
+                            f"Время с момента заказа: {int(time_since_order.total_seconds() // 60)} минут"
+                        )
+                        
+                    except Exception as e:
+                        print(f"Failed to send reminder for order {order['order_number']}: {e}")
+
+async def reminder_scheduler():
+    """Background task to check for reminders every 10 minutes"""
+    while True:
+        try:
+            await send_order_reminders()
+        except Exception as e:
+            print(f"Error in reminder scheduler: {e}")
+        await asyncio.sleep(600)  # Check every 10 minutes
+
 async def main():
     print("Bot is starting...")
+    # Start reminder scheduler in background
+    asyncio.create_task(reminder_scheduler())
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
