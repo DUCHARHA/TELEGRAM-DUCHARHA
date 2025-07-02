@@ -893,7 +893,19 @@ async def handle_status_update(callback: types.CallbackQuery):
         if len(parts) != 3:
             raise ValueError("Invalid callback data format")
         _, order_number, new_status = parts
-        new_status = new_status.upper()
+        
+        # Convert callback data status to enum name
+        status_mapping = {
+            "preparing": "PREPARING",
+            "on_the_way": "ON_THE_WAY", 
+            "delivered": "DELIVERED"
+        }
+        
+        if new_status not in status_mapping:
+            await callback.answer("Неверный статус заказа", show_alert=True)
+            return
+            
+        new_status = status_mapping[new_status]
 
         if new_status not in [status.name for status in OrderStatus]:
             await callback.answer("Неверный статус заказа", show_alert=True)
