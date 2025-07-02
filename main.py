@@ -889,9 +889,10 @@ async def send_promotion(message: Message):
 @dp.callback_query(lambda c: c.data.startswith("status_"))
 async def handle_status_update(callback: types.CallbackQuery):
     try:
-        parts = callback.data.split("_")
-        if len(parts) != 3:
+        parts = callback.data.split("_", 2)  # Split only on first 2 underscores
+        if len(parts) < 3:
             raise ValueError("Invalid callback data format")
+        
         _, order_number, new_status = parts
         
         # Convert callback data status to enum name
