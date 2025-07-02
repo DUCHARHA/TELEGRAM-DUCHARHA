@@ -54,6 +54,7 @@ class OrderStatus(Enum):
 # These will be lost on restart.
 user_carts = {} # {user_id: {product_name: {"price": X, "quantity": Y}}}
 user_orders = {} # {user_id: [{"status": OrderStatus.X, "text": "...", "order_number": N}]}
+order_couriers = {} # {order_number: courier_user_id} - Track which courier took which order
 
 # Product catalog
 products = {
@@ -900,6 +901,7 @@ async def handle_status_update(callback: types.CallbackQuery):
             raise ValueError("Invalid callback data format")
         
         _, order_number, new_status = parts
+        courier_id = callback.from_user.id
         
         # Convert callback data status to enum name
         status_mapping = {
@@ -917,6 +919,25 @@ async def handle_status_update(callback: types.CallbackQuery):
         if new_status not in [status.name for status in OrderStatus]:
             await callback.answer("Неверный статус заказа", show_alert=True)
             return
+
+        # Check if order is already assigned to another courier
+        assigned_courier = order_couriers.get(order_number)
+        if assigned_courier and assigned_courier != courier_id and courier_id != ADMIN_ID:
+            await callback.answer("Этот заказ уже взят другим курьером", show_alert=True)
+            return
+
+        # If taking order for delivery, assign courier
+        if new_status == "ON_THE_WAY" and not assigned_courier:
+            order_couriers[order_number] = courier_id
+            courier_info = callback.from_user
+            courier_mention = f"@{courier_info.username}" if courier_info.username else f"ID {courier_info.id}"
+            
+            # Notify admin about courier assignment
+            await bot.send_message(
+                ADMIN_ID,
+                f"🚗 <b>Заказ #{order_number} взят курьером</b>\n"
+                f"Курьер: {courier_mention}"
+            )
 
         # Find the order and update its status
         found = False
@@ -946,17 +967,30 @@ async def handle_status_update(callback: types.CallbackQuery):
                     }
                     
                     status_info = status_messages.get(new_status, {})
-                    emoji = status_info.get("emoji", "🔔")
+                    emoji = status_info.get("emoji", None)  # Remove default bell emoji
                     message = status_info.get("message", OrderStatus[new_status].value)
                     estimate = status_info.get("estimate", "")
                     
-                    # Send main notification without emoji in text
+                    # Send main notification
                     notification = f"<b>Обновление статуса заказа #{order_number}</b>\n\n{message}\n{estimate}"
                     
                     # Add quick action buttons for customer
                     customer_kb = InlineKeyboardBuilder()
                     if new_status == "ON_THE_WAY":
-                        customer_kb.button(text="📞 Связаться с курьером", url="https://t.me/DilovarAkhi")
+                        # Get assigned courier info for contact button
+                        assigned_courier_id = order_couriers.get(order_number)
+                        if assigned_courier_id:
+                            try:
+                                courier_chat = await bot.get_chat(assigned_courier_id)
+                                if courier_chat.username:
+                                    courier_url = f"https://t.me/{courier_chat.username}"
+                                else:
+                                    courier_url = f"tg://user?id={assigned_courier_id}"
+                                customer_kb.button(text="📞 Связаться с курьером", url=courier_url)
+                            except:
+                                customer_kb.button(text="📞 Связаться с курьером", url="https://t.me/DilovarAkhi")
+                        else:
+                            customer_kb.button(text="📞 Связаться с курьером", url="https://t.me/DilovarAkhi")
                         customer_kb.button(text="💬 Комментарий для курьера", callback_data=f"comment_for_courier_{order_number}")
                     elif new_status == "DELIVERED":
                         customer_kb.button(text="⭐ Оценить доставку", callback_data=f"rate_delivery_{order_number}")
@@ -965,12 +999,15 @@ async def handle_status_update(callback: types.CallbackQuery):
                     reply_markup = customer_kb.as_markup() if customer_kb.export() else None
                     await bot.send_message(user_id, notification, reply_markup=reply_markup)
                     
-                    # Send emoji as separate message
-                    await bot.send_message(user_id, emoji)
+                    # Send emoji as separate message only if it exists and not for delivered status
+                    if emoji and new_status != "DELIVERED":
+                        await bot.send_message(user_id, emoji)
 
                     # Update buttons in admin/courier messages
                     status_kb = InlineKeyboardBuilder()
                     remaining_statuses = []
+                    
+                    # Show buttons based on current status and courier assignment
                     if new_status == "PREPARING":
                         remaining_statuses = ["on_the_way", "delivered"]
                     elif new_status == "ON_THE_WAY":
@@ -980,7 +1017,16 @@ async def handle_status_update(callback: types.CallbackQuery):
                         button_text = "🚗 Отдать курьеру" if status == "on_the_way" else "✅ Доставлен"
                         status_kb.button(text=button_text, callback_data=f"status_{order_number}_{status}")
 
-                    new_message_text = callback.message.text + f"\n\n<b>Текущий статус:</b> {OrderStatus[new_status].value}"
+                    courier_info_text = ""
+                    if order_number in order_couriers:
+                        try:
+                            courier_chat = await bot.get_chat(order_couriers[order_number])
+                            courier_name = f"@{courier_chat.username}" if courier_chat.username else f"ID {order_couriers[order_number]}"
+                            courier_info_text = f"\n<b>Курьер:</b> {courier_name}"
+                        except:
+                            courier_info_text = f"\n<b>Курьер:</b> ID {order_couriers[order_number]}"
+
+                    new_message_text = callback.message.text + f"\n\n<b>Текущий статус:</b> {OrderStatus[new_status].value}{courier_info_text}"
 
                     if remaining_statuses:
                         await callback.message.edit_text(new_message_text, reply_markup=status_kb.adjust(1).as_markup())
@@ -1082,7 +1128,7 @@ async def process_courier_comment(message: Message, state: FSMContext):
     user_info = message.from_user
     user_mention = f"@{user_info.username}" if user_info.username else f"ID {user_info.id}"
     
-    # Send comment to admin and couriers
+    # Send comment to admin and assigned courier
     comment_notification = (
         f"💬 <b>Комментарий клиента для курьера</b>\n"
         f"<b>Заказ:</b> #{order_number}\n"
@@ -1092,7 +1138,14 @@ async def process_courier_comment(message: Message, state: FSMContext):
     
     try:
         await bot.send_message(ADMIN_ID, comment_notification)
-        await bot.send_message(COURIERS_CHAT_ID, comment_notification)
+        
+        # Send to assigned courier if exists, otherwise to couriers chat
+        assigned_courier = order_couriers.get(order_number)
+        if assigned_courier:
+            await bot.send_message(assigned_courier, comment_notification)
+        else:
+            await bot.send_message(COURIERS_CHAT_ID, comment_notification)
+            
         await message.answer("✅ Ваш комментарий передан курьеру!", reply_markup=main_menu)
     except Exception as e:
         print(f"Error sending courier comment: {e}")
