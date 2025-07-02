@@ -1034,10 +1034,19 @@ async def handle_status_update(callback: types.CallbackQuery):
                         courier_notification = (
                             f"🚗 <b>Заказ #{order_number} передан вам для доставки</b>\n\n"
                             f"Для улучшения сервиса, пожалуйста, поделитесь своей геолокацией с клиентом.\n"
-                            f"Нажмите кнопку 'Поделиться геолокацией' выше."
+                            f"Используйте кнопку 'Поделиться геолокацией' в сообщении о заказе."
                         )
                         try:
+                            # Send to courier group chat
                             await bot.send_message(COURIERS_CHAT_ID, courier_notification)
+                            
+                            # Also send personal reminder to courier if they clicked the button
+                            if hasattr(callback, 'from_user'):
+                                await bot.send_message(
+                                    callback.from_user.id,
+                                    f"🚗 <b>Напоминание:</b> Заказ #{order_number} передан вам для доставки.\n"
+                                    f"Не забудьте поделиться геолокацией с клиентом для отслеживания!"
+                                )
                         except Exception as e:
                             print(f"Error sending courier notification: {e}")
 
@@ -1164,10 +1173,12 @@ async def cancel_courier_comment(callback: types.CallbackQuery, state: FSMContex
 @dp.callback_query(lambda c: c.data.startswith("share_location_"))
 async def request_courier_location(callback: types.CallbackQuery):
     order_number = callback.data.replace("share_location_", "")
+    courier_id = callback.from_user.id
     
     # Store active delivery for this courier
-    active_deliveries[callback.from_user.id] = order_number
+    active_deliveries[courier_id] = order_number
     
+    # Send location request to courier's private chat
     kb = ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📍 Отправить мою геолокацию", request_location=True)],
@@ -1177,11 +1188,17 @@ async def request_courier_location(callback: types.CallbackQuery):
         one_time_keyboard=True
     )
     
-    await callback.message.answer(
-        f"🚗 Для отслеживания заказа #{order_number} отправьте вашу текущую геолокацию:",
-        reply_markup=kb
-    )
-    await callback.answer()
+    try:
+        # Send to courier's private chat instead of group chat
+        await bot.send_message(
+            courier_id,
+            f"🚗 Для отслеживания заказа #{order_number} отправьте вашу текущую геолокацию:",
+            reply_markup=kb
+        )
+        await callback.answer("✅ Запрос на геолокацию отправлен в ваш приватный чат!")
+    except Exception as e:
+        print(f"Error sending location request to courier {courier_id}: {e}")
+        await callback.answer("❌ Не удалось отправить запрос. Убедитесь, что вы написали боту в личные сообщения.", show_alert=True)
 
 @dp.message(F.location)
 async def handle_courier_location(message: Message):
