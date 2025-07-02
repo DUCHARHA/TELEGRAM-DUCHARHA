@@ -1,4 +1,3 @@
-
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.enums import ParseMode
 from aiogram.types import Message
@@ -10,7 +9,7 @@ import asyncio
 import logging
 
 # Токен для анонимного бота (нужно создать отдельного бота через @BotFather)
-ANONYMOUS_BOT_TOKEN = "YOUR_ANONYMOUS_BOT_TOKEN"  # Замените на токен анонимного бота
+ANONYMOUS_BOT_TOKEN = "7528281267:AAHEa-ybs61PyvVJ7f-H_TXdmfnx6kNMkaQ"  # Замените на токен анонимного бота
 ADMIN_ID = 1648127193  # ID администратора
 
 # Инициализация анонимного бота
@@ -185,7 +184,7 @@ async def create_anonymous_chat(order_number: str, customer_id: int, courier_id:
         f"💬 <b>Создан анонимный чат</b>\n"
         f"📦 Заказ: #{order_number}\n\n"
         f"Перейдите в анонимный бот для безопасного общения:\n"
-        f"@YOUR_ANONYMOUS_BOT_USERNAME"  # Замените на username анонимного бота
+        f"@Ducharhachat_bot"  # Замените на username анонимного бота
     )
     
     kb = InlineKeyboardBuilder()

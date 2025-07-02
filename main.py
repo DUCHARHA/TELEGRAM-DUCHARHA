@@ -1159,7 +1159,7 @@ async def open_anonymous_chat(callback: types.CallbackQuery):
     order_number = callback.data.replace("anonymous_chat_", "")
     
     kb = InlineKeyboardBuilder()
-    kb.button(text="💬 Открыть анонимный чат", url="https://t.me/YOUR_ANONYMOUS_BOT_USERNAME")  # Замените на username анонимного бота
+    kb.button(text="💬 Открыть анонимный чат", url="https://t.me/@Ducharhachat_bot")  # Замените на username анонимного бота
     
     await callback.message.answer(
         f"🔒 <b>Анонимный чат с курьером</b>\n"
