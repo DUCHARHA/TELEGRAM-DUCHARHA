@@ -7,26 +7,24 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 import asyncio
-from keep_alive import keep_alive # Assuming keep_alive.py is in the same directory
+from keep_alive import keep_alive
 from enum import Enum
 from aiogram.fsm.storage.memory import MemoryStorage
 from datetime import datetime, timedelta
-from anonymous_bot import create_anonymous_chat, start_anonymous_bot
 
-daily_order_counter = {} # Example: {"2023-10-27": 5}
-order_number_to_user = {} # Example: {user_id1: order_num1, user_id2: order_num2}
+daily_order_counter = {}
+order_number_to_user = {}
 
-API_TOKEN = "7582557120:AAGJKYgjXIocys3aZyNaVQlp_k892ARKBz0" # Consider using environment variables for tokens
-ADMIN_ID = 1648127193 # Consider using environment variables
-COURIERS_CHAT_ID = -1002297990202 # Consider using environment variables
+API_TOKEN = "7582557120:AAGJKYgjXIocys3aZyNaVQlp_k892ARKBz0"
+ADMIN_ID = 1648127193
+COURIERS_CHAT_ID = -1002297990202
 
-# This variable is defined but not used anywhere in the provided code.
 last_help_message_id = None
 
 # --- Bot Initialization ---
 bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher(storage=MemoryStorage())
-router = Router() # Good practice to use a router
+router = Router()
 dp.include_router(router)
 
 # --- Keyboards ---
@@ -42,8 +40,12 @@ main_menu = ReplyKeyboardMarkup(
 # --- FSM States ---
 class OrderForm(StatesGroup):
     waiting_for_location = State()
-    confirm_address = State() # This state might be redundant or could be merged logic-wise
+    confirm_address = State()
     waiting_for_phone = State()
+    waiting_for_address_details = State()
+
+class SearchState(StatesGroup):
+    waiting_for_query = State()
 
 class OrderStatus(Enum):
     ACCEPTED = "Ваш заказ принят"
@@ -52,40 +54,343 @@ class OrderStatus(Enum):
     DELIVERED = "Ваш заказ доставлен"
 
 # --- In-memory Data Storage ---
-# These will be lost on restart.
-user_carts = {} # {user_id: {product_name: {"price": X, "quantity": Y}}}
-user_orders = {} # {user_id: [{"status": OrderStatus.X, "text": "...", "order_number": N}]}
-order_couriers = {} # {order_number: courier_user_id} - Track which courier took which order
+user_carts = {}
+user_orders = {}
+order_couriers = {}
 
-# Product catalog
+# Product catalog with subcategories and item variants
 products = {
     "category_fruits": {
-        "Яблоко": 3, "Банан": 4, "Апельсин": 5, "Груша": 4, "Виноград": 8, 
-        "Мандарин": 6, "Киви": 7, "Персик": 6, "Нектарин": 6, "Слива": 4
+        "Яблоки": {
+            "Яблоко": {
+                "Красное": {"price": 3, "unit": "кг"}, 
+                "Зеленое": {"price": 3, "unit": "кг"}, 
+                "Желтое": {"price": 3, "unit": "кг"}
+            }
+        },
+        "Цитрусовые": {
+            "Апельсин": {
+                "Обычный": {"price": 5, "unit": "кг"}
+            }, 
+            "Мандарин": {
+                "Обычный": {"price": 6, "unit": "кг"}
+            }, 
+            "Лимон": {
+                "Обычный": {"price": 8, "unit": "кг"}
+            }, 
+            "Грейпфрут": {
+                "Обычный": {"price": 7, "unit": "кг"}
+            }
+        },
+        "Экзотические": {
+            "Банан": {
+                "Обычный": {"price": 4, "unit": "кг"}
+            }, 
+            "Киви": {
+                "Обычный": {"price": 7, "unit": "шт"}
+            }, 
+            "Ананас": {
+                "Обычный": {"price": 15, "unit": "шт"}
+            }
+        },
+        "Сезонные": {
+            "Виноград": {
+                "Обычный": {"price": 8, "unit": "кг"}
+            }, 
+            "Персик": {
+                "Обычный": {"price": 6, "unit": "кг"}
+            }, 
+            "Нектарин": {
+                "Обычный": {"price": 6, "unit": "кг"}
+            }, 
+            "Слива": {
+                "Обычный": {"price": 4, "unit": "кг"}
+            }, 
+            "Груша": {
+                "Обычный": {"price": 4, "unit": "кг"}
+            }
+        }
     },
     "category_vegetables": {
-        "Картошка": 2, "Морковь": 1, "Огурец": 3, "Помидор": 4, "Капуста": 3,
-        "Лук": 2, "Чеснок": 3, "Перец": 5, "Баклажан": 4, "Кабачок": 3
+        "Корнеплоды": {
+            "Картошка": {
+                "Молодая": {"price": 3, "unit": "кг"}, 
+                "Обычная": {"price": 2, "unit": "кг"}
+            }, 
+            "Морковь": {
+                "Обычная": {"price": 1, "unit": "кг"}
+            }, 
+            "Свекла": {
+                "Обычная": {"price": 2, "unit": "кг"}
+            }
+        },
+        "Зелень": {
+            "Лук зеленый": {
+                "Обычный": {"price": 3, "unit": "кг"}
+            }, 
+            "Укроп": {
+                "Обычный": {"price": 5, "unit": "кг"}
+            }, 
+            "Петрушка": {
+                "Обычная": {"price": 5, "unit": "кг"}
+            }, 
+            "Кинза": {
+                "Обычная": {"price": 4, "unit": "кг"}
+            }
+        },
+        "Овощи для салата": {
+            "Огурец": {
+                "Парниковый": {"price": 4, "unit": "кг"}, 
+                "Грунтовый": {"price": 3, "unit": "кг"}
+            }, 
+            "Помидор": {
+                "Розовый": {"price": 5, "unit": "кг"}, 
+                "Красный": {"price": 4, "unit": "кг"}
+            }, 
+            "Капуста": {
+                "Белокочанная": {"price": 3, "unit": "шт"}
+            }
+        },
+        "Приправы": {
+            "Лук репчатый": {
+                "Обычный": {"price": 2, "unit": "кг"}
+            }, 
+            "Чеснок": {
+                "Обычный": {"price": 3, "unit": "кг"}
+            }, 
+            "Перец болгарский": {
+                "Обычный": {"price": 5, "unit": "кг"}
+            }, 
+            "Перец острый": {
+                "Обычный": {"price": 8, "unit": "кг"}
+            }
+        }
     },
     "category_drinks": {
-        "Кола": 6, "Сок": 5, "Вода": 2, "Фанта": 6, "Спрайт": 6,
-        "Компот": 4, "Энергетик": 8, "Квас": 4, "Лимонад": 5, "Холодный чай": 4
+        "Газированные": {
+            "Coca-Cola": {
+                "0.5л": {"price": 6, "unit": "шт"},
+                "1л": {"price": 10, "unit": "шт"},
+                "1.5л": {"price": 12, "unit": "шт"}
+            }, 
+            "Pepsi": {
+                "0.5л": {"price": 6, "unit": "шт"},
+                "1л": {"price": 10, "unit": "шт"},
+                "1.5л": {"price": 12, "unit": "шт"}
+            }, 
+            "Fanta": {
+                "0.5л": {"price": 6, "unit": "шт"},
+                "1л": {"price": 10, "unit": "шт"}
+            }, 
+            "Sprite": {
+                "0.5л": {"price": 6, "unit": "шт"},
+                "1л": {"price": 10, "unit": "шт"}
+            }, 
+            "7UP": {
+                "0.5л": {"price": 6, "unit": "шт"}
+            }
+        },
+        "Соки": {
+            "Сок яблочный J7": {
+                "1л": {"price": 8, "unit": "шт"}
+            }, 
+            "Сок апельсиновый J7": {
+                "1л": {"price": 8, "unit": "шт"}
+            }, 
+            "Сок томатный": {
+                "1л": {"price": 7, "unit": "шт"}
+            }, 
+            "Нектар персиковый": {
+                "1л": {"price": 6, "unit": "шт"}
+            }
+        },
+        "Вода": {
+            "Вода Ессентуки": {
+                "0.5л": {"price": 4, "unit": "шт"}
+            }, 
+            "Вода обычная": {
+                "1.5л": {"price": 2, "unit": "шт"},
+                "5л": {"price": 5, "unit": "шт"}
+            }, 
+            "Вода газированная": {
+                "0.5л": {"price": 3, "unit": "шт"}
+            }
+        },
+        "Энергетики": {
+            "Red Bull": {
+                "250мл": {"price": 12, "unit": "шт"}
+            }, 
+            "Monster": {
+                "500мл": {"price": 10, "unit": "шт"}
+            }, 
+            "Burn": {
+                "250мл": {"price": 8, "unit": "шт"}
+            }
+        },
+        "Чай/Кофе": {
+            "Холодный чай Lipton": {
+                "0.5л": {"price": 5, "unit": "шт"}
+            }, 
+            "Квас Никола": {
+                "1л": {"price": 4, "unit": "шт"}
+            }, 
+            "Компот домашний": {
+                "1л": {"price": 4, "unit": "шт"}
+            }
+        }
     },
     "category_snacks": {
-        "Чипсы": 4, "Шоколад": 5, "Орехи": 6, "Сухарики": 3, "Печенье": 4,
-        "Вафли": 3, "Крекеры": 3, "Попкорн": 4, "Семечки": 2, "Конфеты": 5
+        "Чипсы": {
+            "Lay's": {
+                "Классические": {"price": 5, "unit": "шт"}, 
+                "Сметана-лук": {"price": 5, "unit": "шт"},
+                "Сыр": {"price": 5, "unit": "шт"}
+            }, 
+            "Pringles": {
+                "Original": {"price": 8, "unit": "шт"},
+                "Сметана-лук": {"price": 8, "unit": "шт"}
+            }, 
+            "Estrella": {
+                "Классические": {"price": 4, "unit": "шт"}
+            }
+        },
+        "Сухарики": {
+            "Кириешки": {
+                "Бекон": {"price": 3, "unit": "шт"}, 
+                "Сыр": {"price": 3, "unit": "шт"}
+            }, 
+            "Сухарики ржаные": {
+                "Обычные": {"price": 2, "unit": "шт"}
+            }
+        },
+        "Шоколад": {
+            "Snickers": {
+                "Обычный": {"price": 6, "unit": "шт"}
+            }, 
+            "Twix": {
+                "Обычный": {"price": 6, "unit": "шт"}
+            }, 
+            "KitKat": {
+                "Обычный": {"price": 6, "unit": "шт"}
+            }, 
+            "Alpen Gold": {
+                "Молочный": {"price": 8, "unit": "шт"}
+            }, 
+            "Аленка": {
+                "Молочный": {"price": 5, "unit": "шт"}
+            }
+        },
+        "Печенье": {
+            "Oreo": {
+                "Классическое": {"price": 5, "unit": "шт"}
+            }, 
+            "Юбилейное": {
+                "Классическое": {"price": 4, "unit": "шт"}
+            }, 
+            "Крекер TUC": {
+                "Классический": {"price": 4, "unit": "шт"}
+            }
+        },
+        "Орехи/Семечки": {
+            "Семечки": {
+                "Жареные": {"price": 2, "unit": "шт"}
+            }, 
+            "Арахис": {
+                "Соленый": {"price": 4, "unit": "шт"}
+            }, 
+            "Миндаль": {
+                "Обычный": {"price": 12, "unit": "шт"}
+            }, 
+            "Фисташки": {
+                "Соленые": {"price": 15, "unit": "шт"}
+            }
+        }
     },
     "category_milks": {
-        "Молоко": 18, "Сметана": 14, "Кефир": 12, "Йогурт": 8, "Творог": 16,
-        "Сыр": 25, "Масло": 20, "Ряженка": 15, "Простокваша": 13, "Сливки": 19
+        "Молоко": {
+            "Простоквашино": {
+                "1л": {"price": 18, "unit": "шт"}
+            }, 
+            "Молоко домашнее": {
+                "1л": {"price": 15, "unit": "шт"}
+            }, 
+            "Веселый молочник": {
+                "1л": {"price": 16, "unit": "шт"}
+            }
+        },
+        "Кисломолочные": {
+            "Кефир": {
+                "Простоквашино": {"price": 12, "unit": "шт"}
+            }, 
+            "Ряженка": {
+                "Обычная": {"price": 15, "unit": "шт"}
+            }, 
+            "Простокваша": {
+                "Обычная": {"price": 13, "unit": "шт"}
+            }, 
+            "Айран": {
+                "Обычный": {"price": 10, "unit": "шт"}
+            }
+        },
+        "Сметана/Творог": {
+            "Сметана": {
+                "20%": {"price": 14, "unit": "шт"}, 
+                "Домашняя": {"price": 18, "unit": "шт"}
+            }, 
+            "Творог": {
+                "Зернистый": {"price": 16, "unit": "шт"}, 
+                "Обезжиренный": {"price": 14, "unit": "шт"}
+            }
+        },
+        "Йогурты": {
+            "Данон": {
+                "Классический": {"price": 8, "unit": "шт"}
+            }, 
+            "Активиа": {
+                "Классическая": {"price": 9, "unit": "шт"}
+            }, 
+            "Йогурт домашний": {
+                "Обычный": {"price": 6, "unit": "шт"}
+            }
+        },
+        "Сыр/Масло": {
+            "Сыр": {
+                "Российский": {"price": 25, "unit": "кг"}, 
+                "Голландский": {"price": 30, "unit": "кг"}
+            }, 
+            "Масло сливочное": {
+                "Обычное": {"price": 20, "unit": "шт"}
+            }, 
+            "Сливки": {
+                "20%": {"price": 19, "unit": "шт"}
+            }
+        }
     }
 }
+
+# Category names in Russian
+category_names = {
+    "category_fruits": "Фрукты",
+    "category_vegetables": "Овощи", 
+    "category_drinks": "Напитки",
+    "category_snacks": "Снеки",
+    "category_milks": "Молочка"
+}
+
+active_users = set()
+user_search_history = {}
+search_cache = {}
+popular_searches = ["яблоко", "молоко", "хлеб", "картошка", "банан"]
+
+# Global mapping for shorter callback data
+current_subcategory_mapping = {}
+current_item_mapping = {}
 
 # --- Command Handlers ---
 @dp.message(CommandStart())
 async def send_welcome(message: Message):
     user_id = message.from_user.id
-    active_users.add(user_id) # Track user on /start
+    active_users.add(user_id)
 
     kb = InlineKeyboardBuilder()
     kb.button(text="Фрукты", callback_data="category_fruits")
@@ -93,14 +398,15 @@ async def send_welcome(message: Message):
     kb.button(text="Напитки", callback_data="category_drinks")
     kb.button(text="Снеки", callback_data="category_snacks")
     kb.button(text="Молочка", callback_data="category_milks")
-    # It's good to adjust the layout for better readability on mobile
-    kb.adjust(2,2,1) # Example: 2 buttons per row, last row has 1
+    kb.adjust(2,2,1)
+
+    # Add search button in initial start menu
+    kb.row(types.InlineKeyboardButton(text="🔍 Поиск", callback_data="search_menu"))
 
     await message.answer(
         "Добро пожаловать! Ждём ваших заказов 💜",
         reply_markup=main_menu
     )
-    # Consider sending sticker and category selection in one go if possible, or ensure order.
     await bot.send_sticker(
         message.chat.id,
         "CAACAgQAAxkBAAIJT2gmdq7qFlY80egtqdn3Q0QPoA5iAAISDQAC1MiAUAXbnVAhxur0NgQ"
@@ -116,13 +422,11 @@ async def change_order_status(message: Message):
     try:
         parts = message.text.split()
         if len(parts) != 3:
-            # Provide more specific error message about format
             raise ValueError("Неверный формат команды. Используйте: /status <номер_заказа> <статус>")
 
         _, order_number_str, status_str = parts
-        order_number = int(order_number_str) # Can raise ValueError if not a number
+        order_number = int(order_number_str)
 
-        # Validate status_str before converting to OrderStatus
         valid_statuses = [s.name for s in OrderStatus]
         if status_str.upper() not in valid_statuses:
             raise ValueError(f"Неверный статус. Доступные статусы: {', '.join(s.lower() for s in valid_statuses)}")
@@ -132,7 +436,6 @@ async def change_order_status(message: Message):
         target_user_id = None
         order_to_update = None
 
-        # Efficiently find the order and user
         for uid, orders_list in user_orders.items():
             for order_data in orders_list:
                 if order_data.get("order_number") == order_number:
@@ -149,9 +452,9 @@ async def change_order_status(message: Message):
         else:
             await message.answer(f"Заказ с номером {order_number} не найден.")
 
-    except ValueError as e: # Catch specific errors
+    except ValueError as e:
         await message.answer(f"Ошибка: {e}")
-    except Exception as e: # Catch any other unexpected errors
+    except Exception as e:
         await message.answer(
             "Произошла непредвиденная ошибка при обновлении статуса.\n"
             "Убедитесь, что формат команды: /status <номер_заказа> <статус>\n"
@@ -160,47 +463,365 @@ async def change_order_status(message: Message):
         )
         print(f"Error in change_order_status: {e}")
 
-
 @dp.message(F.sticker)
 async def get_sticker_id(message: Message):
-    # It's good to also track users if they send a sticker and haven't started yet
     user_id = message.from_user.id
     active_users.add(user_id)
 
     if message.from_user.id == ADMIN_ID:
         await message.answer(f"file_id стикера:\n<code>{message.sticker.file_id}</code>")
-    # Optional: else, you could reply to non-admins that this feature is admin-only or ignore.
 
 # --- Callback Query Handlers ---
 @dp.callback_query(lambda c: c.data.startswith("category_"))
 async def show_category(callback: types.CallbackQuery):
-    user_id = callback.from_user.id # Track user
+    user_id = callback.from_user.id
     active_users.add(user_id)
 
     category_key = callback.data
-    category_name_display = category_key.replace("category_", "").capitalize() # e.g., "Fruits"
-    items = products.get(category_key, {})
+    category_name_display = category_names.get(category_key, category_key.replace("category_", "").capitalize())
+    subcategories = products.get(category_key, {})
 
-    if not items:
-        await callback.message.edit_text(f"В категории '{category_name_display}' пока нет товаров.", reply_markup=InlineKeyboardBuilder().button(text="⬅️ Назад к категориям", callback_data="back_to_categories").as_markup())
+    if not subcategories:
+        await callback.message.edit_text(f"В категории '{category_name_display}' пока нет товаров.", 
+                                       reply_markup=InlineKeyboardBuilder().button(text="⬅️ Назад к категориям", callback_data="back_to_categories").as_markup())
         await callback.answer()
         return
 
     kb = InlineKeyboardBuilder()
-    for item, price in items.items():
-        kb.button(text=f"{item} - {price} сом", callback_data=f"add_category_{category_key.replace('category_', '')}_{item}")
+    # Create mapping for shorter callback data
+    subcategory_mapping = {}
+    for idx, subcategory_name in enumerate(subcategories.keys()):
+        short_id = f"sub_{idx}"
+        subcategory_mapping[short_id] = subcategory_name
+        kb.button(text=f"{subcategory_name}", callback_data=f"subcategory_{category_key}_{short_id}")
 
-    # Adjust layout for better readability
-    kb.adjust(1) # One item per row, or 2 if names are short
+    # Store mapping in a global variable for later use
+    global current_subcategory_mapping
+    current_subcategory_mapping = subcategory_mapping
+
+    # Grid layout for subcategories
+    subcategory_count = len(subcategories)
+    if subcategory_count <= 4:
+        kb.adjust(2)
+    elif subcategory_count <= 6:
+        kb.adjust(3)
+    else:
+        kb.adjust(2)
 
     kb.row(
-        types.InlineKeyboardButton(text="🛒 Корзина", callback_data="cart"),
-        types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_categories") # More descriptive callback
+        types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_categories"),
+        types.InlineKeyboardButton(text="🛒 Корзина", callback_data="cart")
     )
-    await callback.message.edit_text(f"<b>{category_name_display}</b>:", reply_markup=kb.as_markup())
+
+    kb.row(types.InlineKeyboardButton(text="🔍 Поиск", callback_data="search_menu"))
+
+    await callback.message.edit_text(f"<b>{category_name_display}</b>\nВыберите подкатегорию:", reply_markup=kb.as_markup())
     await callback.answer()
 
-# Modified add_to_cart to use the refined callback_data
+@dp.callback_query(lambda c: c.data.startswith("subcategory_"))
+async def show_subcategory(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    active_users.add(user_id)
+
+    # Parse callback data: subcategory_category_fruits_sub_0
+    callback_data = callback.data.replace("subcategory_", "")
+
+    parts = callback_data.split("_")
+    if len(parts) < 4:
+        await callback.answer("Ошибка: неверный формат подкатегории.", show_alert=True)
+        return
+
+    # Reconstruct category_key and get subcategory by short ID
+    category_key = f"category_{parts[1]}"  # category_fruits, category_vegetables, etc.
+    short_id = "_".join(parts[2:])  # sub_0, sub_1, etc.
+
+    # Get real subcategory name from mapping
+    subcategory_name = current_subcategory_mapping.get(short_id)
+    if not subcategory_name:
+        await callback.answer("Ошибка: подкатегория не найдена.", show_alert=True)
+        return
+
+    category_name_display = category_names.get(category_key, category_key.replace("category_", "").capitalize())
+
+    subcategories = products.get(category_key, {})
+    items = subcategories.get(subcategory_name, {})
+
+    if not items:
+        await callback.message.edit_text(f"В подкатегории '{subcategory_name}' пока нет товаров.", 
+                                       reply_markup=InlineKeyboardBuilder().button(text="⬅️ Назад", callback_data=category_key).as_markup())
+        await callback.answer()
+        return
+
+    kb = InlineKeyboardBuilder()
+    # Create mapping for shorter callback data
+    item_mapping = {}
+    for idx, item_name in enumerate(items.keys()):
+        short_item_id = f"itm_{idx}"
+        item_mapping[short_item_id] = item_name
+        kb.button(text=f"{item_name}", callback_data=f"show_item_{category_key.replace('category_', '')}_{short_item_id}")
+
+    # Store item mapping globally 
+    global current_item_mapping
+    current_item_mapping.update(item_mapping)
+
+    # Smart grid layout
+    item_count = len(items)
+    if item_count <= 6:
+        kb.adjust(2)
+    elif item_count <= 12:
+        kb.adjust(3)
+    else:
+        kb.adjust(2)
+
+    kb.row(
+        types.InlineKeyboardButton(text="⬅️ Назад", callback_data=category_key),
+        types.InlineKeyboardButton(text="🛒 Корзина", callback_data="cart")
+    )
+
+    kb.row(types.InlineKeyboardButton(text="🔍 Поиск", callback_data="search_menu"))
+
+    await callback.message.edit_text(f"<b>{category_name_display} → {subcategory_name}</b>:", reply_markup=kb.as_markup())
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data.startswith("show_item_"))
+async def show_item_variants(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    active_users.add(user_id)
+
+    # Parse callback data: show_item_fruits_itm_0
+    callback_data = callback.data.replace("show_item_", "")
+    parts = callback_data.split("_")
+
+    if len(parts) < 3:
+        await callback.answer("Ошибка: неверный формат товара.", show_alert=True)
+        return
+
+    # Get category and item short ID
+    category_name = parts[0]  # fruits, vegetables, etc.
+    item_short_id = "_".join(parts[1:])  # itm_0, itm_1, etc.
+
+    category_key = f"category_{category_name}"
+
+    # Get real item name from mapping
+    item_name = current_item_mapping.get(item_short_id)
+    if not item_name:
+        await callback.answer("Ошибка: товар не найден.", show_alert=True)
+        return
+
+    # Find which subcategory contains this item
+    subcategories = products.get(category_key, {})
+    subcategory_name = None
+    item_variants = None
+
+    for subcat_name, subcat_items in subcategories.items():
+        if item_name in subcat_items:
+            subcategory_name = subcat_name
+            item_variants = subcat_items[item_name]
+            break
+
+    if not subcategory_name or not item_variants:
+        await callback.answer("Ошибка: товар не найден.", show_alert=True)
+        return
+
+    category_name_display = category_names.get(category_key, category_key.replace("category_", "").capitalize())
+
+    kb = InlineKeyboardBuilder()
+    # Create mapping for shorter callback data
+    variant_mapping = {}
+    for idx, (variant_name, variant_data) in enumerate(item_variants.items()):
+        price = variant_data["price"]
+        unit = variant_data["unit"]
+        short_variant_id = f"var_{idx}"
+        variant_mapping[short_variant_id] = variant_name
+        kb.button(text=f"{variant_name} - {price} сом/{unit}", callback_data=f"add_variant_{category_name}_{item_short_id}_{short_variant_id}")
+
+    # Store variant mapping globally 
+    global current_variant_mapping
+    current_variant_mapping = getattr(show_item_variants, 'current_variant_mapping', {})
+    current_variant_mapping.update(variant_mapping)
+    show_item_variants.current_variant_mapping = current_variant_mapping
+
+    # Smart grid layout
+    variant_count = len(item_variants)
+    if variant_count <= 6:
+        kb.adjust(2)
+    elif variant_count <= 12:
+        kb.adjust(3)
+    else:
+        kb.adjust(2)
+
+    kb.row(
+        types.InlineKeyboardButton(text="⬅️ Назад", callback_data=f"subcategory_{category_key}_{[k for k, v in current_subcategory_mapping.items() if v == subcategory_name][0]}"),
+        types.InlineKeyboardButton(text="🛒 Корзина", callback_data="cart")
+    )
+
+    kb.row(types.InlineKeyboardButton(text="🔍 Поиск", callback_data="search_menu"))
+
+    await callback.message.edit_text(f"<b>{category_name_display} → {subcategory_name} → {item_name}</b>:", reply_markup=kb.as_markup())
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data.startswith("add_variant_"))
+async def add_variant_to_cart(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    active_users.add(user_id)
+
+    # Parse callback data: add_variant_fruits_itm_0_var_0
+    callback_data = callback.data.replace("add_variant_", "")
+    parts = callback_data.split("_")
+
+    if len(parts) < 4:
+        await callback.answer("Ошибка: неверный формат товара.", show_alert=True)
+        return
+
+    # Get category, item and variant short IDs
+    category_name = parts[0]  # fruits, vegetables, etc.
+    item_short_id = "_".join(parts[1:3])  # itm_0
+    variant_short_id = "_".join(parts[3:])  # var_0
+
+    category_key = f"category_{category_name}"
+
+    # Get real names from mappings
+    item_name = current_item_mapping.get(item_short_id)
+    variant_name = getattr(show_item_variants, 'current_variant_mapping', {}).get(variant_short_id)
+
+    if not item_name or not variant_name:
+        await callback.answer("Ошибка: товар не найден.", show_alert=True)
+        return
+
+    # Find the item data
+    subcategories = products.get(category_key, {})
+    subcategory_name = None
+    variant_data = None
+
+    for subcat_name, subcat_items in subcategories.items():
+        if item_name in subcat_items and variant_name in subcat_items[item_name]:
+            subcategory_name = subcat_name
+            variant_data = subcat_items[item_name][variant_name]
+            break
+
+    if not variant_data:
+        await callback.answer("Ошибка: товар не найден в каталоге.", show_alert=True)
+        return
+
+    price = variant_data["price"]
+    unit = variant_data["unit"]
+    cart = user_carts.setdefault(user_id, {})
+
+    # Use combined name for cart item
+    cart_item_name = f"{item_name} {variant_name}"
+
+    if cart_item_name in cart:
+        cart[cart_item_name]["quantity"] += 1
+    else:
+        cart[cart_item_name] = {"price": price, "quantity": 1, "category": category_key, "subcategory": subcategory_name, "unit": unit}
+
+    await callback.answer(f"{cart_item_name} добавлен в корзину!")
+
+@dp.callback_query(lambda c: c.data.startswith("add_sub_"))
+async def add_subcategory_to_cart(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    active_users.add(user_id)
+
+    # Parse callback data: add_sub_fruits_itm_0
+    callback_data = callback.data.replace("add_sub_", "")
+    parts = callback_data.split("_")
+
+    if len(parts) < 3:
+        await callback.answer("Ошибка: неверный формат товара.", show_alert=True)
+        return
+
+    # Get category and item short ID
+    category_name = parts[0]  # fruits, vegetables, etc.
+    item_short_id = "_".join(parts[1:])  # itm_0, itm_1, etc.
+
+    category_key = f"category_{category_name}"
+
+    # Get real item name from mapping
+    item_name = current_item_mapping.get(item_short_id)
+    if not item_name:
+        await callback.answer("Ошибка: товар не найден.", show_alert=True)
+        return
+
+    # Find which subcategory contains this item
+    subcategories = products.get(category_key, {})
+    subcategory_name = None
+    items = None
+
+    for subcat_name, subcat_items in subcategories.items():
+        if item_name in subcat_items:
+            subcategory_name = subcat_name
+            items = subcat_items
+            break
+
+    if not subcategory_name or not items:
+        await callback.answer("Ошибка: подкатегория не найдена.", show_alert=True)
+        return
+
+    if item_name not in items:
+        await callback.answer(f"Товар '{item_name}' не найден в этой подкатегории.", show_alert=True)
+        return
+
+    item_data = items[item_name]
+    price = item_data["price"]
+    unit = item_data["unit"]
+    cart = user_carts.setdefault(user_id, {})
+
+    if item_name in cart:
+        cart[item_name]["quantity"] += 1
+    else:
+        cart[item_name] = {"price": price, "quantity": 1, "category": category_key, "subcategory": subcategory_name, "unit": unit}
+
+    await callback.answer(f"{item_name} добавлен в корзину!")
+
+@dp.callback_query(lambda c: c.data.startswith("search_add_"))
+async def add_search_to_cart(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    active_users.add(user_id)
+
+    # Parse callback data: search_add_fruits_123
+    callback_data = callback.data.replace("search_add_", "")
+    parts = callback_data.split("_")
+
+    if len(parts) < 2:
+        await callback.answer("Ошибка: неверный формат товара.", show_alert=True)
+        return
+
+    category_name = parts[0]
+    item_hash = parts[1]
+    category_key = f"category_{category_name}"
+
+    # Get real item name from mapping
+    item_name = current_item_mapping.get(f"search_{item_hash}")
+    if not item_name:
+        await callback.answer("Ошибка: товар не найден.", show_alert=True)
+        return
+
+    # Find which subcategory contains this item
+    subcategories = products.get(category_key, {})
+    subcategory_name = None
+    item_data = None
+
+    for subcat_name, subcat_items in subcategories.items():
+        if item_name in subcat_items:
+            subcategory_name = subcat_name
+            item_data = subcat_items[item_name]
+            break
+
+    if not item_data:
+        await callback.answer("Ошибка: товар не найден в каталоге.", show_alert=True)
+        return
+
+    price = item_data["price"]
+    unit = item_data["unit"]
+    cart = user_carts.setdefault(user_id, {})
+
+    if item_name in cart:
+        cart[item_name]["quantity"] += 1
+    else:
+        cart[item_name] = {"price": price, "quantity": 1, "category": category_key, "subcategory": subcategory_name, "unit": unit}
+
+    await callback.answer(f"{item_name} добавлен в корзину!")
+
 @dp.callback_query(lambda c: c.data.startswith("add_"))
 async def add_to_cart(callback: types.CallbackQuery):
     user_id = callback.from_user.id
@@ -218,17 +839,17 @@ async def add_to_cart(callback: types.CallbackQuery):
         await callback.answer(f"Товар '{item_name}' не найден в этой категории.", show_alert=True)
         return
 
-    price = category_items[item_name]
+    item_data = category_items[item_name]
+    price = item_data["price"]
+    unit = item_data["unit"]
     cart = user_carts.setdefault(user_id, {})
 
     if item_name in cart:
         cart[item_name]["quantity"] += 1
     else:
-        cart[item_name] = {"price": price, "quantity": 1, "category": category_key} # Store category for "back"
+        cart[item_name] = {"price": price, "quantity": 1, "category": category_key, "unit": unit}
 
     await callback.answer(f"{item_name} добавлен в корзину!")
-    # Optional: update cart message or offer to go to cart/continue shopping
-
 
 @dp.callback_query(lambda c: c.data.startswith("increase_"))
 async def increase_quantity(callback: types.CallbackQuery):
@@ -239,7 +860,7 @@ async def increase_quantity(callback: types.CallbackQuery):
 
     if item_name in cart:
         cart[item_name]["quantity"] += 1
-        await show_cart_logic(callback.message, user_id, edit_message=True) # Use a helper
+        await show_cart_logic(callback.message, user_id, edit_message=True)
         await callback.answer(f"Количество {item_name} увеличено")
     else:
         await callback.answer("Товар не найден в корзине.", show_alert=True)
@@ -256,8 +877,8 @@ async def decrease_quantity(callback: types.CallbackQuery):
         if cart[item_name]["quantity"] > 1:
             cart[item_name]["quantity"] -= 1
         else:
-            del cart[item_name] # Remove item if quantity becomes 0
-        await show_cart_logic(callback.message, user_id, edit_message=True) # Use a helper
+            del cart[item_name]
+        await show_cart_logic(callback.message, user_id, edit_message=True)
         await callback.answer(f"Количество {item_name} уменьшено")
     else:
         await callback.answer("Товар не найден в корзине.", show_alert=True)
@@ -272,7 +893,7 @@ async def remove_from_cart(callback: types.CallbackQuery):
 
     if item_to_remove in cart:
         del cart[item_to_remove]
-        await show_cart_logic(callback.message, user_id, edit_message=True) # Use a helper
+        await show_cart_logic(callback.message, user_id, edit_message=True)
         await callback.answer(f"{item_to_remove} удален(а) из корзины.")
     else:
         await callback.answer("Товар не найден в корзине для удаления.", show_alert=True)
@@ -295,37 +916,27 @@ async def show_cart_logic(message_or_callback_message: types.Message, user_id: i
     total = 0
     kb = InlineKeyboardBuilder()
 
-    first_item_category_key = None
-
     for item, data in cart.items():
-        if not first_item_category_key and "category" in data:
-            first_item_category_key = data["category"]
         price = data["price"]
         qty = data["quantity"]
-        text += f"▪️ {item} — {qty} x {price} = {qty * price} сом\n"
+        unit = data.get("unit", "шт")  # Default to "шт" if unit not found
+        text += f"▪️ {item} — {qty} {unit} x {price} = {qty * price} сом\n"
         total += qty * price
         kb.row(
             types.InlineKeyboardButton(text="➖", callback_data=f"decrease_{item}"),
-            types.InlineKeyboardButton(text=f"{qty}", callback_data="noop"), # noop = no operation
+            types.InlineKeyboardButton(text=f"{qty}", callback_data="noop"),
             types.InlineKeyboardButton(text="➕", callback_data=f"increase_{item}"),
             types.InlineKeyboardButton(text="❌", callback_data=f"remove_{item}")
         )
 
     text += f"\n<b>Итого: {total} сом</b>"
 
-    # Navigation buttons
-    back_button_data = "back_to_categories"
-    back_button_text = "⬅️ К категориям"
-    if first_item_category_key: # If we know a category, offer to go back there
-        back_button_data = first_item_category_key # e.g. "category_fruits"
-        back_button_text = f"⬅️ К {first_item_category_key.replace('category_', '').capitalize()}"
-
+    # Always show back to categories button
     kb.row(
-        types.InlineKeyboardButton(text=back_button_text, callback_data=back_button_data),
+        types.InlineKeyboardButton(text="⬅️ К категориям", callback_data="back_to_categories"),
         types.InlineKeyboardButton(text="✅ Оформить", callback_data="checkout")
     )
     kb.row(types.InlineKeyboardButton(text="🗑 Очистить корзину", callback_data="clear_cart"))
-
 
     if edit_message:
         await message_or_callback_message.edit_text(text, reply_markup=kb.as_markup())
@@ -333,7 +944,7 @@ async def show_cart_logic(message_or_callback_message: types.Message, user_id: i
         await message_or_callback_message.answer(text, reply_markup=kb.as_markup())
 
 @dp.callback_query(lambda c: c.data == "cart")
-async def show_cart_callback(callback: types.CallbackQuery): # Renamed from show_cart to avoid conflict
+async def show_cart_callback(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     await show_cart_logic(callback.message, user_id, edit_message=True)
     await callback.answer()
@@ -352,7 +963,7 @@ async def clear_cart_callback(callback: types.CallbackQuery):
 
 # --- Checkout Process (FSM) ---
 @dp.callback_query(lambda c: c.data == "checkout")
-async def checkout_start(callback: types.CallbackQuery, state: FSMContext): # Renamed from ask_location
+async def checkout_start(callback: types.CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     active_users.add(user_id)
     cart = user_carts.get(user_id, {})
@@ -363,26 +974,26 @@ async def checkout_start(callback: types.CallbackQuery, state: FSMContext): # Re
         return
 
     kb = InlineKeyboardBuilder()
-    kb.button(text="📍 Отправить геолокацию", callback_data="send_location_action") # More descriptive
+    kb.button(text="📍 Отправить геолокацию", callback_data="send_location_action")
     kb.button(text="📝 Ввести адрес вручную", callback_data="write_address_action")
-    kb.button(text="⬅️ Назад в корзину", callback_data="cart") # Back to cart
+    kb.button(text="⬅️ Назад в корзину", callback_data="cart")
     kb.adjust(1)
     await callback.message.edit_text(
         "<b>Оформление заказа</b>\nКак вы хотите указать адрес доставки?",
         reply_markup=kb.as_markup()
     )
-    await state.set_state(OrderForm.waiting_for_location) # Initial state for address
+    await state.set_state(OrderForm.waiting_for_location)
     await callback.answer()
 
 @dp.callback_query(lambda c: c.data == "send_location_action", OrderForm.waiting_for_location)
-async def ask_geo_permission(callback: types.CallbackQuery, state: FSMContext): # Renamed
+async def ask_geo_permission(callback: types.CallbackQuery, state: FSMContext):
     # This reply keyboard is temporary and will be replaced by the main_menu later
     kb = ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📍 Отправить мою геолокацию", request_location=True)]
         ],
         resize_keyboard=True,
-        one_time_keyboard=True # Important for this type of keyboard
+        one_time_keyboard=True
     )
     await callback.message.answer(
         "Нажмите кнопку ниже, чтобы отправить вашу геолокацию.",
@@ -392,14 +1003,14 @@ async def ask_geo_permission(callback: types.CallbackQuery, state: FSMContext): 
     await callback.answer()
 
 @dp.callback_query(lambda c: c.data == "write_address_action", OrderForm.waiting_for_location)
-async def ask_manual_address_input(callback: types.CallbackQuery, state: FSMContext): # Renamed
-    await callback.message.edit_text( # Edit previous message
+async def ask_manual_address_input(callback: types.CallbackQuery, state: FSMContext):
+    await callback.message.edit_text(
         "Пожалуйста, введите ваш адрес доставки (улица, дом, этаж, квартира, ориентир):",
         # No inline keyboard needed here, user will type.
         # Can add a "cancel" or "back" button if desired.
         reply_markup=InlineKeyboardBuilder().button(text="⬅️ Отмена", callback_data="checkout_cancel").as_markup()
     )
-    await state.set_state(OrderForm.confirm_address) # State for receiving manual address text
+    await state.set_state(OrderForm.confirm_address)
     await callback.answer()
 
 # Handles location sent via button
@@ -414,18 +1025,18 @@ async def process_location_sent(message: Message, state: FSMContext):
 
     kb = InlineKeyboardBuilder()
     kb.button(text="✅ Да, верно", callback_data="confirm_address_yes")
-    kb.button(text="✏️ Изменить", callback_data="confirm_address_no") # "No" implies re-enter/choose method
+    kb.button(text="✏️ Изменить", callback_data="confirm_address_no")
     await message.answer(
         f"Ваш адрес: <a href='{address}'>посмотреть на карте</a>\nВерно?",
         reply_markup=kb.as_markup(),
-        disable_web_page_preview=False # Allow preview for map link
+        disable_web_page_preview=False
     )
 
 # Handles manually typed address
 @router.message(OrderForm.confirm_address, F.text)
 async def process_manual_address(message: Message, state: FSMContext):
     address = message.text
-    if len(address) < 5: # Basic validation
+    if len(address) < 5:
         await message.reply("Адрес слишком короткий. Пожалуйста, введите более подробный адрес или отмените.",
                             reply_markup=InlineKeyboardBuilder().button(text="⬅️ Отмена", callback_data="checkout_cancel").as_markup())
         return
@@ -476,7 +1087,7 @@ async def address_retry_choice(callback: types.CallbackQuery, state: FSMContext)
         "Пожалуйста, укажите адрес доставки еще раз:",
         reply_markup=kb.as_markup()
     )
-    await state.set_state(OrderForm.waiting_for_location) # Reset to initial address state
+    await state.set_state(OrderForm.waiting_for_location)
     await callback.answer()
 
 @dp.callback_query(F.data == "checkout_cancel", OrderForm.waiting_for_location)
@@ -486,8 +1097,13 @@ async def checkout_cancel_process(callback: types.CallbackQuery, state: FSMConte
     await state.clear()
     await callback.message.edit_text("Оформление заказа отменено.")
     # Show cart again or main menu
-    await show_cart_logic(callback.message, callback.from_user.id, edit_message=False) # Send as new message
+    await show_cart_logic(callback.message, callback.from_user.id, edit_message=False)
     await callback.answer("Оформление отменено.")
+
+@dp.callback_query(F.data == "back_to_categories", SearchState.waiting_for_query)
+async def search_cancel_process(callback: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    await go_back_to_categories(callback)
 
 
 @router.message(OrderForm.waiting_for_phone, F.text)
@@ -500,7 +1116,7 @@ async def process_phone_and_complete_order(message: Message, state: FSMContext):
         return
 
     data = await state.get_data()
-    address = data.get("address", "Не указан") # Default if something went wrong
+    address = data.get("address", "Не указан")
     user_id = message.from_user.id
 
     # Generate daily order number
@@ -520,8 +1136,9 @@ async def process_phone_and_complete_order(message: Message, state: FSMContext):
     total_amount = 0
     for item, item_data in cart.items():
         item_total = item_data['price'] * item_data['quantity']
+        unit = item_data.get('unit', 'шт')
         order_items_text_parts.append(
-            f"- {item} x {item_data['quantity']} = {item_total} сом"
+            f"- {item} x {item_data['quantity']} {unit} = {item_total} сом"
         )
         total_amount += item_total
 
@@ -539,18 +1156,28 @@ async def process_phone_and_complete_order(message: Message, state: FSMContext):
 
     # Clear cart for this user
     user_carts[user_id] = {}
-    await message.answer(user_confirmation_text, reply_markup=main_menu) # Send with main keyboard
+    await message.answer(user_confirmation_text, reply_markup=main_menu)
 
     # Prepare notification for admin and couriers
     user_info = message.from_user
     user_mention = f"@{user_info.username}" if user_info.username else f"ID <a href='tg://user?id={user_id}'>{user_id}</a>"
 
+    # Full notification for admin (with customer info)
     admin_notification_text = (
         f"🔔 <b>Новый заказ #{order_display_number}</b> от {user_mention}\n\n"
         f"<b>Состав заказа:</b>\n{order_details_text}\n\n"
         f"<b>Итого: {total_amount} сом</b>\n"
         f"<b>Адрес:</b> {address}\n"
         f"<b>Телефон:</b> <code>{phone}</code> (нажмите для копирования)\n"
+        f"<b>Время:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+    )
+
+    # Anonymous notification for couriers (without customer info)
+    couriers_notification_text = (
+        f"🔔 <b>Новый заказ #{order_display_number}</b>\n\n"
+        f"<b>Состав заказа:</b>\n{order_details_text}\n\n"
+        f"<b>Итого: {total_amount} сом</b>\n"
+        f"<b>Адрес:</b> {address}\n"
         f"<b>Время:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
     )
 
@@ -562,25 +1189,27 @@ async def process_phone_and_complete_order(message: Message, state: FSMContext):
     status_kb.adjust(1)
 
     try:
+        # Send full info to admin
         await bot.send_message(ADMIN_ID, admin_notification_text, reply_markup=status_kb.as_markup())
-        await bot.send_message(COURIERS_CHAT_ID, admin_notification_text, reply_markup=status_kb.as_markup())
+        # Send anonymous version to couriers
+        await bot.send_message(COURIERS_CHAT_ID, couriers_notification_text, reply_markup=status_kb.as_markup())
     except Exception as e:
         print(f"Error sending order notification: {e}")
         # Optionally notify admin that notification failed for couriers
 
     # Store the order
     user_orders.setdefault(user_id, []).append({
-        "order_number": order_display_number, # Using the display number
+        "order_number": order_display_number,
         "status": OrderStatus.ACCEPTED,
-        "details_for_user": user_confirmation_text, # Full text sent to user for /orders
-        "details_for_admin": admin_notification_text, # For /active_orders
+        "details_for_user": user_confirmation_text,
+        "details_for_admin": admin_notification_text,
         "timestamp": datetime.now().isoformat(),
-        "user_id": user_id,  # Store user_id for reminders
-        "last_reminder": None  # Track last reminder sent
+        "user_id": user_id,
+        "last_reminder": None
     })
 
 
-    await state.clear() # Clear FSM state
+    await state.clear()
 
 # --- Admin Commands ---
 @dp.message(Command("active_orders"))
@@ -612,7 +1241,7 @@ async def cmd_active_orders(message: Message):
         await message.answer(full_response, reply_markup=main_menu)
 
 # --- General User Commands & Menu Handlers ---
-@dp.callback_query(lambda c: c.data == "back_to_categories") # Changed from "back"
+@dp.callback_query(lambda c: c.data == "back_to_categories")
 async def go_back_to_categories(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     active_users.add(user_id)
@@ -623,15 +1252,18 @@ async def go_back_to_categories(callback: types.CallbackQuery):
     kb.button(text="Напитки", callback_data="category_drinks")
     kb.button(text="Снеки", callback_data="category_snacks")
     kb.button(text="Молочка", callback_data="category_milks")
-    kb.adjust(2,2,1) # Example layout
+    kb.adjust(2,2,1)
+
+    # Add search button in category menu
+    kb.row(types.InlineKeyboardButton(text="🔍 Поиск", callback_data="search_menu"))
 
     await callback.message.edit_text("Выберите категорию:", reply_markup=kb.as_markup())
     await callback.answer()
 
-@dp.message(Command("cart")) # Handles /cart command
+@dp.message(Command("cart"))
 async def cmd_cart(message: Message):
     user_id = message.from_user.id
-    await show_cart_logic(message, user_id, edit_message=False) # Send as new message
+    await show_cart_logic(message, user_id, edit_message=False)
 
 @dp.message(Command("orders"))
 async def cmd_orders(message: Message):
@@ -644,9 +1276,9 @@ async def cmd_orders(message: Message):
         return
 
     response_parts = ["<b>Ваши заказы:</b>\n"]
-    for order_data in reversed(user_specific_orders): # Show newest first
+    for order_data in reversed(user_specific_orders):
         # Using the text that was originally sent to the user for consistency
-        order_text_for_user = order_data.get("details_for_user", # Fallback
+        order_text_for_user = order_data.get("details_for_user",
                                            f"📦 <b>Заказ #{order_data['order_number']}</b>\n"
                                            f"Статус: {order_data['status'].value}\n"
                                            f"Время: {datetime.fromisoformat(order_data['timestamp']).strftime('%Y-%m-%d %H:%M') if 'timestamp' in order_data else 'N/A'}")
@@ -692,33 +1324,175 @@ async def cmd_help(message: Message):
 """
     await message.answer(help_text, reply_markup=main_menu)
 
+# Search history and cache
+user_search_history = {}
+search_cache = {}
+popular_searches = ["яблоко", "молоко", "хлеб", "картошка", "банан"]
+
+def calculate_similarity(word1, word2):
+    """Simple similarity calculation for fuzzy search"""
+    word1, word2 = word1.lower(), word2.lower()
+    if word1 == word2:
+        return 1.0
+
+    # Check if one word contains the other
+    if word1 in word2 or word2 in word1:
+        return 0.8
+
+    # Check character overlap
+    common_chars = set(word1) & set(word2)
+    total_chars = set(word1) | set(word2)
+    if total_chars:
+        similarity = len(common_chars) / len(total_chars)
+        # Boost similarity if words start with same characters
+        if word1[0] == word2[0]:
+            similarity += 0.2
+        return min(similarity, 1.0)
+    return 0.0
+
+def find_similar_products(query):
+    """Find products using fuzzy matching"""
+    results = []
+    query_lower = query.lower()
+
+    # Synonyms mapping
+    synonyms = {
+        "помидор": "томат",
+        "томат": "помидор", 
+        "картошка": "картофель",
+        "картофель": "картошка",
+        "кола": "coca-cola",
+        "пепси": "pepsi"
+    }
+
+    # Check synonyms
+    search_terms = [query_lower]
+    if query_lower in synonyms:
+        search_terms.append(synonyms[query_lower])
+
+    for category_key, subcategories_dict in products.items():
+        category_name = category_names.get(category_key, category_key.replace('category_', '').capitalize())
+        for subcategory_name, items_dict in subcategories_dict.items():
+            for item_name, variants_dict in items_dict.items():
+                item_lower = item_name.lower()
+
+                # Search in item names first
+                for term in search_terms:
+                    if term in item_lower or item_lower in term:
+                        # Add all variants of this item
+                        for variant_name, variant_data in variants_dict.items():
+                            price = variant_data["price"]
+                            unit = variant_data["unit"]
+                            full_name = f"{item_name} {variant_name}"
+                            results.append((full_name, price, unit, category_key, subcategory_name, category_name, 1.0))
+                        break
+                else:
+                    # Fuzzy matching on item names
+                    for term in search_terms:
+                        similarity = calculate_similarity(term, item_lower)
+                        if similarity >= 0.6:  # Threshold for fuzzy match
+                            # Add all variants of this item
+                            for variant_name, variant_data in variants_dict.items():
+                                price = variant_data["price"]
+                                unit = variant_data["unit"]
+                                full_name = f"{item_name} {variant_name}"
+                                results.append((full_name, price, unit, category_key, subcategory_name, category_name, similarity))
+                            break
+
+                # Also search in variant names
+                for variant_name, variant_data in variants_dict.items():
+                    variant_lower = variant_name.lower()
+                    full_name_lower = f"{item_lower} {variant_lower}"
+
+                    for term in search_terms:
+                        if term in variant_lower or term in full_name_lower:
+                            price = variant_data["price"]
+                            unit = variant_data["unit"]
+                            full_name = f"{item_name} {variant_name}"
+                            # Check if not already added
+                            if not any(result[0] == full_name for result in results):
+                                results.append((full_name, price, unit, category_key, subcategory_name, category_name, 0.9))
+
+    # Sort by similarity (highest first)
+    results.sort(key=lambda x: x[6], reverse=True)
+    return results
+
+@router.message(SearchState.waiting_for_query, F.text)
+async def handle_search_input(message: Message, state: FSMContext):
+    user_id = message.from_user.id
+    active_users.add(user_id)
+    search_query = message.text.strip()
+
+    if not search_query:
+        await message.reply("Пожалуйста, введите название товара для поиска.")
+        return
+
+    await search_products_logic(message, search_query)
+    await state.clear()
+
 @dp.message(Command("search"))
 async def search_products(message: Message):
     user_id = message.from_user.id
     active_users.add(user_id)
-    search_query = message.text.replace("/search", "").strip().lower()
+    search_query = message.text.replace("/search", "").strip()
+
     if not search_query:
-        await message.answer("Пожалуйста, укажите что вы ищете. Например: <code>/search яблоко</code>")
+        await message.answer("Используйте: /search название товара")
         return
 
-    results = []
-    for category_key, items_dict in products.items():
-        category_name = category_key.replace('category_', '').capitalize()
-        for item_name, price in items_dict.items():
-            if search_query in item_name.lower():
-                # Add button to add to cart directly from search results
-                kb_search = InlineKeyboardBuilder()
-                kb_search.button(text=f"➕ В корзину", callback_data=f"add_{category_key}_{item_name}")
-                results.append(
-                    (f"▪️ {item_name} — {price} сом ({category_name})", kb_search.as_markup())
-                )
+    await search_products_logic(message, search_query)
+
+async def search_products_logic(message: Message, search_query: str):
+    user_id = message.from_user.id
+    search_query_lower = search_query.lower()
+
+    # Check cache first
+    cache_key = search_query_lower
+    if cache_key in search_cache:
+        results = search_cache[cache_key]
+    else:
+        # Perform search
+        results = find_similar_products(search_query)
+        # Cache results
+        search_cache[cache_key] = results
+        # Limit cache size
+        if len(search_cache) > 100:
+            search_cache.clear()
+
+    # Update search history
+    user_history = user_search_history.setdefault(user_id, [])
+    if search_query not in user_history:
+        user_history.append(search_query)
+        # Keep only last 10 searches
+        if len(user_history) > 10:
+            user_history.pop(0)
 
     if results:
-        await message.answer("🔍 <b>Результаты поиска:</b>")
-        for res_text, res_kb in results:
-            await message.answer(res_text, reply_markup=res_kb)
+        await message.answer(f"🔍 <b>Результаты поиска для '{search_query}':</b>")
+
+        # Show top 10 results
+        for item_name, price, unit, category_key, subcategory_name, category_name, similarity in results[:10]:
+            kb_search = InlineKeyboardBuilder()
+
+            # Create short callback for search results  
+            search_callback = f"search_add_{category_key.replace('category_', '')}_{hash(item_name) % 1000}"
+            current_item_mapping[f"search_{hash(item_name) % 1000}"] = item_name
+            kb_search.button(text="➕ В корзину", callback_data=search_callback)
+            kb_search.button(text="🛒 Корзина", callback_data="cart")
+
+            result_text = f"▪️ {item_name} — {price} сом/{unit}\n📁 {category_name} → {subcategory_name}"
+            await message.answer(result_text, reply_markup=kb_search.as_markup())
+
+        if len(results) > 10:
+            await message.answer(f"... и еще {len(results) - 10} товаров")
+
     else:
-        await message.answer("По вашему запросу ничего не найдено 😔")
+        await message.answer(f"По запросу '{search_query}' ничего не найдено 😔")
+
+        # Suggest browsing categories
+        kb_cat = InlineKeyboardBuilder()
+        kb_cat.button(text="📂 Посмотреть все категории", callback_data="back_to_categories")
+        await message.answer("Посмотрите наш каталог:", reply_markup=kb_cat.as_markup())
 
 # --- Text-based Menu Button Handlers ---
 @dp.message(F.text == "📂 Каталог")
@@ -733,6 +1507,10 @@ async def menu_catalog(message: Message):
     kb.button(text="Снеки", callback_data="category_snacks")
     kb.button(text="Молочка", callback_data="category_milks")
     kb.adjust(2,2,1)
+
+    # Add search button in category menu
+    kb.row(types.InlineKeyboardButton(text="🔍 Поиск", callback_data="search_menu"))
+
     await message.answer("Выберите категорию:", reply_markup=kb.as_markup())
 
 @dp.message(F.text == "🛍 Корзина")
@@ -762,7 +1540,7 @@ class CourierCommentState(StatesGroup):
     waiting_for_comment = State()
 
 @dp.message(F.text == "⭐️ Оставить отзыв")
-async def menu_reviews_start(message: Message, state: FSMContext): # Renamed
+async def menu_reviews_start(message: Message, state: FSMContext):
     # await message.delete()
     user_id = message.from_user.id
     active_users.add(user_id)
@@ -775,7 +1553,7 @@ async def menu_reviews_start(message: Message, state: FSMContext): # Renamed
     await state.set_state(ReviewState.waiting_for_rating)
 
 @dp.callback_query(lambda c: c.data.startswith("rate_"), ReviewState.waiting_for_rating)
-async def handle_rating_input(callback: types.CallbackQuery, state: FSMContext): # Renamed
+async def handle_rating_input(callback: types.CallbackQuery, state: FSMContext):
     try:
         rating = int(callback.data.split("_")[1])
         if not 1 <= rating <= 5:
@@ -793,43 +1571,89 @@ async def handle_rating_input(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 @dp.message(ReviewState.waiting_for_text, F.text)
-async def handle_review_text_input(message: Message, state: FSMContext): # Renamed
+async def handle_review_text_input(message: Message, state: FSMContext):
     data = await state.get_data()
-    rating = data.get("rating", "N/A") # Default if rating somehow not set
+    rating = data.get("rating", "N/A")
     review_text = message.text
+    delivery_order = data.get("delivery_order_number")
 
-    if len(review_text) < 10: # Basic validation
-        await message.reply("Ваш отзыв слишком короткий. Пожалуйста, опишите подробнее или отмените.",
-                            reply_markup=InlineKeyboardBuilder().button(text="⬅️ Отмена", callback_data="review_cancel").as_markup())
-        return
+
 
     user_info = message.from_user
     user_mention = f"@{user_info.username}" if user_info.username else f"ID <a href='tg://user?id={user_info.id}'>{user_info.id}</a>"
 
-    review_message_to_admin = (
-        f"📝 <b>Новый отзыв от {user_mention}</b>\n"
-        f"<b>Оценка:</b> {'⭐' * rating if isinstance(rating, int) else rating}\n"
-        f"<b>Отзыв:</b>\n{review_text}"
-    )
+    if delivery_order:
+        # Delivery review
+        review_message_to_admin = (
+            f"📊 <b>Отзыв о доставке от {user_mention}</b>\n"
+            f"<b>Заказ:</b> #{delivery_order}\n"
+            f"<b>Оценка:</b> {'⭐' * rating if isinstance(rating, int) else rating}\n"
+            f"<b>Отзыв:</b>\n{review_text}"
+        )
+        thank_you_message = "Спасибо за отзыв о доставке! Мы ценим ваше мнение. 💜"
+    else:
+        # General review
+        review_message_to_admin = (
+            f"📝 <b>Новый отзыв от {user_mention}</b>\n"
+            f"<b>Оценка:</b> {'⭐' * rating if isinstance(rating, int) else rating}\n"
+            f"<b>Отзыв:</b>\n{review_text}"
+        )
+        thank_you_message = "Спасибо за ваш отзыв! Мы ценим ваше мнение. 💜"
+
     try:
         await bot.send_message(ADMIN_ID, review_message_to_admin)
     except Exception as e:
         print(f"Error sending review to admin: {e}")
 
-    await message.answer("Спасибо за ваш отзыв! Мы ценим ваше мнение. 💜", reply_markup=main_menu)
+    await message.answer(thank_you_message, reply_markup=main_menu)
     await state.clear()
 
 @dp.callback_query(F.data == "review_cancel", ReviewState.waiting_for_rating)
 @dp.callback_query(F.data == "review_cancel", ReviewState.waiting_for_text)
+@dp.callback_query(F.data == "delivery_review_cancel", ReviewState.waiting_for_rating)
+@dp.callback_query(F.data == "delivery_review_cancel", ReviewState.waiting_for_text)
 async def review_cancel_process(callback: types.CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.edit_text("Оставление отзыва отменено.")
-    # await callback.message.answer("Вы вернулись в главное меню.", reply_markup=main_menu) # Optional: send new message
     await callback.answer("Отзыв отменен.")
 
 
+
+async def show_category_by_key(callback: types.CallbackQuery, category_key: str):
+    """Helper function to show category by key"""
+    category_name_display = category_names.get(category_key, category_key.replace("category_", "").capitalize())
+    items = products.get(category_key, {})
+
+    if not items:
+        await callback.message.edit_text(f"В категории '{category_name_display}' пока нет товаров.", 
+                                       reply_markup=InlineKeyboardBuilder().button(text="⬅️ Назад к категориям", callback_data="back_to_categories").as_markup())
+        return
+
+    kb = InlineKeyboardBuilder()
+    for item, item_data in items.items():
+        price = item_data["price"]
+        unit = item_data["unit"]
+        kb.button(text=f"{item} - {price} сом/{unit}", callback_data=f"add_category_{category_key.replace('category_', '')}_{item}")
+
+    # Calculate grid layout
+    item_count = len(items)
+    if item_count <= 4:
+        kb.adjust(2)
+    elif item_count <= 9:
+        kb.adjust(3)
+    elif item_count <= 16:
+        kb.adjust(4)
+    else:
+        kb.adjust(3)
+
+    kb.row(
+        types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_categories"),
+        types.InlineKeyboardButton(text="🛒 Корзина", callback_data="cart")
+    )
+    await callback.message.edit_text(f"<b>{category_name_display}</b>:", reply_markup=kb.as_markup())
+
 @dp.message(F.text == "❓ Помощь")
-async def menu_help_contact(message: Message): # Renamed
+async def menu_help_contact(message: Message):
     # await message.delete()
     user_id = message.from_user.id
     active_users.add(user_id)
@@ -851,7 +1675,6 @@ async def menu_help_contact(message: Message): # Renamed
     )
 
 active_users = set()
-
 
 @dp.message(Command("promote"))
 async def send_promotion(message: Message):
@@ -885,7 +1708,7 @@ async def send_promotion(message: Message):
                 reply_markup=InlineKeyboardBuilder().button(text="🎁 Перейти к акциям", callback_data="category_fruits").as_markup() # Example
             )
             success_count += 1
-        except Exception as e: # Catch specific exceptions like ChatNotFound, BotBlocked etc.
+        except Exception as e:
             print(f"Failed to send promo to {user_id}: {e}")
             failed_count += 1
 
@@ -900,21 +1723,21 @@ async def handle_status_update(callback: types.CallbackQuery):
         parts = callback.data.split("_", 2)  # Split only on first 2 underscores
         if len(parts) < 3:
             raise ValueError("Invalid callback data format")
-        
+
         _, order_number, new_status = parts
         courier_id = callback.from_user.id
-        
+
         # Convert callback data status to enum name
         status_mapping = {
             "preparing": "PREPARING",
             "on_the_way": "ON_THE_WAY", 
             "delivered": "DELIVERED"
         }
-        
+
         if new_status not in status_mapping:
             await callback.answer("Неверный статус заказа", show_alert=True)
             return
-            
+
         new_status = status_mapping[new_status]
 
         if new_status not in [status.name for status in OrderStatus]:
@@ -932,24 +1755,12 @@ async def handle_status_update(callback: types.CallbackQuery):
             order_couriers[order_number] = courier_id
             courier_info = callback.from_user
             courier_mention = f"@{courier_info.username}" if courier_info.username else f"ID {courier_info.id}"
-            
+
             # Notify admin about courier assignment
             await bot.send_message(
                 ADMIN_ID,
                 f"🚗 <b>Заказ #{order_number} взят курьером</b>\n"
                 f"Курьер: {courier_mention}"
-            )
-            
-            # Notify courier about anonymous chat availability
-            courier_kb = InlineKeyboardBuilder()
-            courier_kb.button(text="💬 Анонимный чат с клиентом", url="https://t.me/Ducharhachat_bot")
-            
-            await bot.send_message(
-                courier_id,
-                f"🚗 <b>Вы взяли заказ #{order_number}</b>\n\n"
-                f"Для связи с клиентом используйте анонимный чат.\n"
-                f"Это обеспечит безопасность ваших личных данных.",
-                reply_markup=courier_kb.as_markup()
             )
 
         # Find the order and update its status
@@ -978,34 +1789,40 @@ async def handle_status_update(callback: types.CallbackQuery):
                             "estimate": "Спасибо за заказ! Ждем вас снова! 💜"
                         }
                     }
-                    
+
                     status_info = status_messages.get(new_status, {})
                     emoji = status_info.get("emoji", None)  # Remove default bell emoji
                     message = status_info.get("message", OrderStatus[new_status].value)
                     estimate = status_info.get("estimate", "")
-                    
+
                     # Send main notification
                     notification = f"<b>Обновление статуса заказа #{order_number}</b>\n\n{message}\n{estimate}"
-                    
+
                     # Add quick action buttons for customer
                     customer_kb = InlineKeyboardBuilder()
                     if new_status == "ON_THE_WAY":
-                        # Создаем анонимный чат вместо прямой связи
+                        # Get assigned courier info for contact button
                         assigned_courier_id = order_couriers.get(order_number)
                         if assigned_courier_id:
-                            # Создаем анонимный чат
-                            await create_anonymous_chat(order_number, user_id, assigned_courier_id)
-                            customer_kb.button(text="💬 Анонимный чат с курьером", url="https://t.me/Ducharhachat_bot")
+                            try:
+                                courier_chat = await bot.get_chat(assigned_courier_id)
+                                if courier_chat.username:
+                                    courier_url = f"https://t.me/{courier_chat.username}"
+                                else:
+                                    courier_url = f"tg://user?id={assigned_courier_id}"
+                                customer_kb.button(text="📞 Связаться с курьером", url=courier_url)
+                            except:
+                                customer_kb.button(text="📞 Связаться с курьером", url="https://t.me/DilovarAkhi")
                         else:
-                            customer_kb.button(text="📞 Связаться с поддержкой", url="https://t.me/DilovarAkhi")
+                            customer_kb.button(text="📞 Связаться с курьером", url="https://t.me/DilovarAkhi")
                         customer_kb.button(text="💬 Комментарий для курьера", callback_data=f"comment_for_courier_{order_number}")
                     elif new_status == "DELIVERED":
                         customer_kb.button(text="⭐ Оценить доставку", callback_data=f"rate_delivery_{order_number}")
                         customer_kb.button(text="🔄 Повторить заказ", callback_data="repeat_order")
-                    
+
                     reply_markup = customer_kb.as_markup() if customer_kb.export() else None
                     await bot.send_message(user_id, notification, reply_markup=reply_markup)
-                    
+
                     # Send emoji as separate message only if it exists and not for delivered status
                     if emoji and new_status != "DELIVERED":
                         await bot.send_message(user_id, emoji)
@@ -1013,7 +1830,7 @@ async def handle_status_update(callback: types.CallbackQuery):
                     # Update buttons in admin/courier messages
                     status_kb = InlineKeyboardBuilder()
                     remaining_statuses = []
-                    
+
                     # Show buttons based on current status and courier assignment
                     if new_status == "PREPARING":
                         remaining_statuses = ["on_the_way", "delivered"]
@@ -1068,51 +1885,48 @@ async def comment_for_courier(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 @dp.callback_query(lambda c: c.data.startswith("rate_delivery_"))
-async def rate_delivery_quick(callback: types.CallbackQuery):
+async def rate_delivery_quick(callback: types.CallbackQuery, state: FSMContext):
     order_number = callback.data.replace("rate_delivery_", "")
+    await state.update_data(delivery_order_number=order_number)
+
     kb = InlineKeyboardBuilder()
     for i in range(1, 6):
         kb.button(text="⭐" * i, callback_data=f"delivery_rate_{order_number}_{i}")
-    kb.adjust(5)
+    kb.adjust(3, 2)  # Same layout as main review: 3 on top, 2 on bottom
+    kb.row(types.InlineKeyboardButton(text="⬅️ Отмена", callback_data="delivery_review_cancel"))
+
     await callback.message.answer(
-        f"Оцените качество доставки заказа #{order_number}:",
+        f"Пожалуйста, оцените качество доставки заказа #{order_number}:",
         reply_markup=kb.as_markup()
     )
+    await state.set_state(ReviewState.waiting_for_rating)
     await callback.answer()
 
-@dp.callback_query(lambda c: c.data.startswith("delivery_rate_"))
-async def process_delivery_rating(callback: types.CallbackQuery):
+@dp.callback_query(lambda c: c.data.startswith("delivery_rate_"), ReviewState.waiting_for_rating)
+async def process_delivery_rating(callback: types.CallbackQuery, state: FSMContext):
     parts = callback.data.split("_")
     if len(parts) >= 4:
         order_number = "_".join(parts[2:-1])  # Handle order numbers with underscores
         rating = int(parts[-1])
-        
+
+        await state.update_data(rating=rating, delivery_order_number=order_number)
         await callback.message.edit_text(
-            f"Спасибо за оценку! Вы поставили {rating} {'⭐' * rating} за доставку заказа #{order_number}"
+            f"Вы поставили оценку: {'⭐' * rating}\nТеперь, пожалуйста, напишите ваш отзыв о доставке:",
+            reply_markup=InlineKeyboardBuilder().button(text="⬅️ Отмена", callback_data="delivery_review_cancel").as_markup()
         )
-        
-        # Send rating to admin
-        user_info = callback.from_user
-        user_mention = f"@{user_info.username}" if user_info.username else f"ID {user_info.id}"
-        await bot.send_message(
-            ADMIN_ID,
-            f"📊 <b>Оценка доставки</b>\n"
-            f"Заказ: #{order_number}\n"
-            f"Клиент: {user_mention}\n"
-            f"Оценка: {'⭐' * rating} ({rating}/5)"
-        )
-    await callback.answer()
+        await state.set_state(ReviewState.waiting_for_text)
+        await callback.answer()
 
 @dp.callback_query(F.data == "repeat_order")
 async def repeat_last_order(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     user_specific_orders = user_orders.get(user_id, [])
-    
+
     if not user_specific_orders:
         await callback.message.answer("У вас пока нет заказов для повтора.")
         await callback.answer()
         return
-    
+
     # Get last completed order
     last_order = user_specific_orders[-1]
     await callback.message.answer(
@@ -1126,38 +1940,46 @@ async def process_courier_comment(message: Message, state: FSMContext):
     data = await state.get_data()
     order_number = data.get("comment_order_number")
     comment = message.text
-    
+
     if len(comment.strip()) < 3:
         await message.reply("Комментарий слишком короткий. Напишите подробнее или отмените.",
                            reply_markup=InlineKeyboardBuilder().button(text="⬅️ Отмена", callback_data="cancel_comment").as_markup())
         return
-    
+
     user_info = message.from_user
     user_mention = f"@{user_info.username}" if user_info.username else f"ID {user_info.id}"
-    
-    # Send comment to admin and assigned courier
-    comment_notification = (
+
+    # Full notification for admin (with customer info)
+    admin_comment_notification = (
         f"💬 <b>Комментарий клиента для курьера</b>\n"
         f"<b>Заказ:</b> #{order_number}\n"
         f"<b>Клиент:</b> {user_mention}\n"
         f"<b>Комментарий:</b> {comment}"
     )
-    
+
+    # Anonymous notification for couriers (without customer info)
+    courier_comment_notification = (
+        f"💬 <b>Комментарий клиента для курьера</b>\n"
+        f"<b>Заказ:</b> #{order_number}\n"
+        f"<b>Комментарий:</b> {comment}"
+    )
+
     try:
-        await bot.send_message(ADMIN_ID, comment_notification)
-        
-        # Send to assigned courier if exists, otherwise to couriers chat
+        # Send full info to admin
+        await bot.send_message(ADMIN_ID, admin_comment_notification)
+
+        # Send anonymous version to assigned courier if exists, otherwise to couriers chat
         assigned_courier = order_couriers.get(order_number)
         if assigned_courier:
-            await bot.send_message(assigned_courier, comment_notification)
+            await bot.send_message(assigned_courier, courier_comment_notification)
         else:
-            await bot.send_message(COURIERS_CHAT_ID, comment_notification)
-            
+            await bot.send_message(COURIERS_CHAT_ID, courier_comment_notification)
+
         await message.answer("✅ Ваш комментарий передан курьеру!", reply_markup=main_menu)
     except Exception as e:
         print(f"Error sending courier comment: {e}")
         await message.answer("Произошла ошибка при отправке комментария. Попробуйте позже.", reply_markup=main_menu)
-    
+
     await state.clear()
 
 @dp.callback_query(F.data == "cancel_comment", CourierCommentState.waiting_for_comment)
@@ -1166,48 +1988,32 @@ async def cancel_courier_comment(callback: types.CallbackQuery, state: FSMContex
     await callback.message.edit_text("Отправка комментария отменена.")
     await callback.answer("Комментарий отменен.")
 
-@dp.callback_query(lambda c: c.data.startswith("anonymous_chat_"))
-async def open_anonymous_chat(callback: types.CallbackQuery):
-    order_number = callback.data.replace("anonymous_chat_", "")
-    
-    kb = InlineKeyboardBuilder()
-    kb.button(text="💬 Открыть анонимный чат", url="https://t.me/Ducharhachat_bot")
-    
-    await callback.message.answer(
-        f"🔒 <b>Анонимный чат с курьером</b>\n"
-        f"📦 Заказ: #{order_number}\n\n"
-        f"Для безопасного общения с курьером перейдите в анонимный бот.\n"
-        f"Ваши личные данные не будут переданы курьеру.",
-        reply_markup=kb.as_markup()
-    )
-    await callback.answer()
-
 # --- Order Reminder System ---
 async def send_order_reminders():
     """Send reminders for orders that haven't been updated in a while"""
     current_time = datetime.now()
-    
+
     for user_id, orders_list in user_orders.items():
         for order in orders_list:
             if order["status"] in [OrderStatus.ACCEPTED, OrderStatus.PREPARING]:
                 order_time = datetime.fromisoformat(order["timestamp"])
                 time_since_order = current_time - order_time
-                
+
                 # Send reminder if order is older than 30 minutes and no reminder sent yet
                 if time_since_order > timedelta(minutes=30) and not order.get("last_reminder"):
                     try:
                         reminder_text = f"⏰ <b>Напоминание о заказе #{order['order_number']}</b>\n\n"
-                        
+
                         if order["status"] == OrderStatus.ACCEPTED:
                             reminder_text += "Ваш заказ принят и ожидает обработки. Мы скоро начнем его собирать!"
                         elif order["status"] == OrderStatus.PREPARING:
                             reminder_text += "Ваш заказ собирается. Спасибо за терпение!"
-                        
+
                         reminder_text += f"\n\nВремя с момента заказа: {int(time_since_order.total_seconds() // 60)} минут"
-                        
+
                         await bot.send_message(user_id, reminder_text)
                         order["last_reminder"] = current_time.isoformat()
-                        
+
                         # Notify admin about delayed order
                         await bot.send_message(
                             ADMIN_ID,
@@ -1215,7 +2021,7 @@ async def send_order_reminders():
                             f"Статус: {order['status'].value}\n"
                             f"Время с момента заказа: {int(time_since_order.total_seconds() // 60)} минут"
                         )
-                        
+
                     except Exception as e:
                         print(f"Failed to send reminder for order {order['order_number']}: {e}")
 
@@ -1228,18 +2034,29 @@ async def reminder_scheduler():
             print(f"Error in reminder scheduler: {e}")
         await asyncio.sleep(600)  # Check every 10 minutes
 
+@dp.callback_query(F.data == "search_menu")
+async def show_search_menu(callback: types.CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    active_users.add(user_id)
+
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⬅️ Назад к категориям", callback_data="back_to_categories")
+
+    await callback.message.edit_text(
+        "🔍 <b>Поиск товаров</b>\n\nВведите название товара:",
+        reply_markup=kb.as_markup()
+    )
+    await state.set_state(SearchState.waiting_for_query)
+    await callback.answer()
+
+
+
 async def main():
     print("Bot is starting...")
     # Start reminder scheduler in background
     asyncio.create_task(reminder_scheduler())
-    
-    # Start anonymous bot in background
-    asyncio.create_task(start_anonymous_bot())
-    print("Anonymous bot started...")
-    
-    # Start main bot
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    keep_alive() # If you are using a service like Replit to keep the bot alive
+    keep_alive()
     asyncio.run(main())
