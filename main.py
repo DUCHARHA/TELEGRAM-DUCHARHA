@@ -7,6 +7,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 import asyncio
+import os
 from keep_alive import keep_alive
 from enum import Enum
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -15,9 +16,9 @@ from datetime import datetime, timedelta
 daily_order_counter = {}
 order_number_to_user = {}
 
-API_TOKEN = "7582557120:AAGJKYgjXIocys3aZyNaVQlp_k892ARKBz0"
-ADMIN_ID = 1648127193
-COURIERS_CHAT_ID = -1002297990202
+API_TOKEN = os.getenv("API_TOKEN", "7582557120:AAGJKYgjXIocys3aZyNaVQlp_k892ARKBz0")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "1648127193"))
+COURIERS_CHAT_ID = int(os.getenv("COURIERS_CHAT_ID", "-1002297990202"))
 
 last_help_message_id = None
 
