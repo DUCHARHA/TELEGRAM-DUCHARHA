@@ -61,249 +61,70 @@ order_couriers = {}
 
 # Product catalog with subcategories and item variants
 products = {
-    "category_fruits": {
-        "Яблоки": {
-            "Яблоко": {
-                "Красное": {"price": 3, "unit": "кг"}, 
-                "Зеленое": {"price": 3, "unit": "кг"}, 
-                "Желтое": {"price": 3, "unit": "кг"}
-            }
-        },
-        "Цитрусовые": {
-            "Апельсин": {
-                "Обычный": {"price": 5, "unit": "кг"}
-            }, 
-            "Мандарин": {
-                "Обычный": {"price": 6, "unit": "кг"}
-            }, 
-            "Лимон": {
-                "Обычный": {"price": 8, "unit": "кг"}
-            }, 
-            "Грейпфрут": {
-                "Обычный": {"price": 7, "unit": "кг"}
-            }
-        },
-        "Экзотические": {
-            "Банан": {
-                "Обычный": {"price": 4, "unit": "кг"}
-            }, 
-            "Киви": {
-                "Обычный": {"price": 7, "unit": "шт"}
-            }, 
-            "Ананас": {
-                "Обычный": {"price": 15, "unit": "шт"}
-            }
-        },
-        "Сезонные": {
-            "Виноград": {
-                "Обычный": {"price": 8, "unit": "кг"}
-            }, 
-            "Персик": {
-                "Обычный": {"price": 6, "unit": "кг"}
-            }, 
-            "Нектарин": {
-                "Обычный": {"price": 6, "unit": "кг"}
-            }, 
-            "Слива": {
-                "Обычный": {"price": 4, "unit": "кг"}
-            }, 
-            "Груша": {
-                "Обычный": {"price": 4, "unit": "кг"}
-            }
-        }
-    },
-    "category_vegetables": {
-        "Корнеплоды": {
-            "Картошка": {
-                "Молодая": {"price": 3, "unit": "кг"}, 
-                "Обычная": {"price": 2, "unit": "кг"}
-            }, 
-            "Морковь": {
-                "Обычная": {"price": 1, "unit": "кг"}
-            }, 
-            "Свекла": {
-                "Обычная": {"price": 2, "unit": "кг"}
-            }
-        },
-        "Зелень": {
-            "Лук зеленый": {
-                "Обычный": {"price": 3, "unit": "кг"}
-            }, 
-            "Укроп": {
-                "Обычный": {"price": 5, "unit": "кг"}
-            }, 
-            "Петрушка": {
-                "Обычная": {"price": 5, "unit": "кг"}
-            }, 
-            "Кинза": {
-                "Обычная": {"price": 4, "unit": "кг"}
-            }
-        },
-        "Овощи для салата": {
-            "Огурец": {
-                "Парниковый": {"price": 4, "unit": "кг"}, 
-                "Грунтовый": {"price": 3, "unit": "кг"}
-            }, 
-            "Помидор": {
-                "Розовый": {"price": 5, "unit": "кг"}, 
-                "Красный": {"price": 4, "unit": "кг"}
-            }, 
-            "Капуста": {
-                "Белокочанная": {"price": 3, "unit": "шт"}
-            }
-        },
-        "Приправы": {
-            "Лук репчатый": {
-                "Обычный": {"price": 2, "unit": "кг"}
-            }, 
-            "Чеснок": {
-                "Обычный": {"price": 3, "unit": "кг"}
-            }, 
-            "Перец болгарский": {
-                "Обычный": {"price": 5, "unit": "кг"}
-            }, 
-            "Перец острый": {
-                "Обычный": {"price": 8, "unit": "кг"}
-            }
-        }
-    },
     "category_drinks": {
-        "Газированные": {
+        "🥤 Газированные напитки": {
             "Coca-Cola": {
-                "0.5л": {"price": 6, "unit": "шт"},
-                "1л": {"price": 10, "unit": "шт"},
-                "1.5л": {"price": 12, "unit": "шт"}
-            }, 
+                "0.5л": {"price": 6, "unit": "сом"},
+                "1л": {"price": 10, "unit": "сом"},
+                "1.5л": {"price": 12, "unit": "сом"}
+            },
             "Pepsi": {
-                "0.5л": {"price": 6, "unit": "шт"},
-                "1л": {"price": 10, "unit": "шт"},
-                "1.5л": {"price": 12, "unit": "шт"}
-            }, 
-            "Fanta": {
-                "0.5л": {"price": 6, "unit": "шт"},
-                "1л": {"price": 10, "unit": "шт"}
-            }, 
+                "0.5л": {"price": 6, "unit": "сом"},
+                "1л": {"price": 10, "unit": "сом"},
+                "1.5л": {"price": 12, "unit": "сом"}
+            },
             "Sprite": {
-                "0.5л": {"price": 6, "unit": "шт"},
-                "1л": {"price": 10, "unit": "шт"}
-            }, 
-            "7UP": {
-                "0.5л": {"price": 6, "unit": "шт"}
+                "0.5л": {"price": 6, "unit": "сом"},
+                "1л": {"price": 10, "unit": "сом"}
+            },
+            "Fanta": {
+                "0.5л": {"price": 6, "unit": "сом"},
+                "1л": {"price": 10, "unit": "сом"}
             }
         },
-        "Соки": {
-            "Сок яблочный J7": {
-                "1л": {"price": 8, "unit": "шт"}
-            }, 
-            "Сок апельсиновый J7": {
-                "1л": {"price": 8, "unit": "шт"}
-            }, 
-            "Сок томатный": {
-                "1л": {"price": 7, "unit": "шт"}
-            }, 
-            "Нектар персиковый": {
-                "1л": {"price": 6, "unit": "шт"}
-            }
-        },
-        "Вода": {
-            "Вода Ессентуки": {
-                "0.5л": {"price": 4, "unit": "шт"}
-            }, 
+        "💧 Вода": {
             "Вода обычная": {
-                "1.5л": {"price": 2, "unit": "шт"},
-                "5л": {"price": 5, "unit": "шт"}
-            }, 
+                "1.5л": {"price": 2, "unit": "сом"},
+                "5л": {"price": 5, "unit": "сом"}
+            },
+            "Вода Ессентуки": {
+                "0.5л": {"price": 4, "unit": "сом"}
+            },
             "Вода газированная": {
-                "0.5л": {"price": 3, "unit": "шт"}
+                "0.5л": {"price": 3, "unit": "сом"}
             }
         },
-        "Энергетики": {
-            "Red Bull": {
-                "250мл": {"price": 12, "unit": "шт"}
-            }, 
-            "Monster": {
-                "500мл": {"price": 10, "unit": "шт"}
-            }, 
-            "Burn": {
-                "250мл": {"price": 8, "unit": "шт"}
+        "🥤 Соки": {
+            "Сок яблочный J7": {
+                "1л": {"price": 8, "unit": "сом"}
+            },
+            "Сок апельсиновый J7": {
+                "1л": {"price": 8, "unit": "сом"}
+            },
+            "Нектар персиковый": {
+                "1л": {"price": 6, "unit": "сом"}
             }
         },
-        "Чай/Кофе": {
+        "🍃 Чай/Кофе": {
             "Холодный чай Lipton": {
-                "0.5л": {"price": 5, "unit": "шт"}
-            }, 
+                "0.5л": {"price": 5, "unit": "сом"}
+            },
             "Квас Никола": {
-                "1л": {"price": 4, "unit": "шт"}
-            }, 
+                "1л": {"price": 4, "unit": "сом"}
+            },
             "Компот домашний": {
-                "1л": {"price": 4, "unit": "шт"}
-            }
-        }
-    },
-    "category_snacks": {
-        "Чипсы": {
-            "Lay's": {
-                "Классические": {"price": 5, "unit": "шт"}, 
-                "Сметана-лук": {"price": 5, "unit": "шт"},
-                "Сыр": {"price": 5, "unit": "шт"}
-            }, 
-            "Pringles": {
-                "Original": {"price": 8, "unit": "шт"},
-                "Сметана-лук": {"price": 8, "unit": "шт"}
-            }, 
-            "Estrella": {
-                "Классические": {"price": 4, "unit": "шт"}
+                "1л": {"price": 4, "unit": "сом"}
             }
         },
-        "Сухарики": {
-            "Кириешки": {
-                "Бекон": {"price": 3, "unit": "шт"}, 
-                "Сыр": {"price": 3, "unit": "шт"}
-            }, 
-            "Сухарики ржаные": {
-                "Обычные": {"price": 2, "unit": "шт"}
-            }
-        },
-        "Шоколад": {
-            "Snickers": {
-                "Обычный": {"price": 6, "unit": "шт"}
-            }, 
-            "Twix": {
-                "Обычный": {"price": 6, "unit": "шт"}
-            }, 
-            "KitKat": {
-                "Обычный": {"price": 6, "unit": "шт"}
-            }, 
-            "Alpen Gold": {
-                "Молочный": {"price": 8, "unit": "шт"}
-            }, 
-            "Аленка": {
-                "Молочный": {"price": 5, "unit": "шт"}
-            }
-        },
-        "Печенье": {
-            "Oreo": {
-                "Классическое": {"price": 5, "unit": "шт"}
-            }, 
-            "Юбилейное": {
-                "Классическое": {"price": 4, "unit": "шт"}
-            }, 
-            "Крекер TUC": {
-                "Классический": {"price": 4, "unit": "шт"}
-            }
-        },
-        "Орехи/Семечки": {
-            "Семечки": {
-                "Жареные": {"price": 2, "unit": "шт"}
-            }, 
-            "Арахис": {
-                "Соленый": {"price": 4, "unit": "шт"}
-            }, 
-            "Миндаль": {
-                "Обычный": {"price": 12, "unit": "шт"}
-            }, 
-            "Фисташки": {
-                "Соленые": {"price": 15, "unit": "шт"}
+        "⚡ Энергетики": {
+            "Red Bull": {
+                "250мл": {"price": 12, "unit": "сом"}
+            },
+            "Monster": {
+                "500мл": {"price": 10, "unit": "сом"}
+            },
+            "Burn": {
+                "250мл": {"price": 8, "unit": "сом"}
             }
         }
     },
@@ -371,10 +192,7 @@ products = {
 
 # Category names in Russian
 category_names = {
-    "category_fruits": "Фрукты",
-    "category_vegetables": "Овощи", 
     "category_drinks": "Напитки",
-    "category_snacks": "Снеки",
     "category_milks": "Молочка"
 }
 
@@ -394,12 +212,9 @@ async def send_welcome(message: Message):
     active_users.add(user_id)
 
     kb = InlineKeyboardBuilder()
-    kb.button(text="Фрукты", callback_data="category_fruits")
-    kb.button(text="Овощи", callback_data="category_vegetables")
     kb.button(text="Напитки", callback_data="category_drinks")
-    kb.button(text="Снеки", callback_data="category_snacks")
     kb.button(text="Молочка", callback_data="category_milks")
-    kb.adjust(2,2,1)
+    kb.adjust(2)
 
     # Add search button in initial start menu
     kb.row(types.InlineKeyboardButton(text="🔍 Поиск", callback_data="search_menu"))
@@ -935,7 +750,7 @@ async def show_cart_logic(message_or_callback_message: types.Message, user_id: i
     # Always show back to categories button
     kb.row(
         types.InlineKeyboardButton(text="⬅️ К категориям", callback_data="back_to_categories"),
-        types.InlineKeyboardButton(text="✅ Оформить", callback_data="checkout")
+        types.InlineKeyboardBuilder(text="✅ Оформить", callback_data="checkout")
     )
     kb.row(types.InlineKeyboardButton(text="🗑 Очистить корзину", callback_data="clear_cart"))
 
@@ -1248,12 +1063,9 @@ async def go_back_to_categories(callback: types.CallbackQuery):
     active_users.add(user_id)
 
     kb = InlineKeyboardBuilder()
-    kb.button(text="Фрукты", callback_data="category_fruits")
-    kb.button(text="Овощи", callback_data="category_vegetables")
     kb.button(text="Напитки", callback_data="category_drinks")
-    kb.button(text="Снеки", callback_data="category_snacks")
     kb.button(text="Молочка", callback_data="category_milks")
-    kb.adjust(2,2,1)
+    kb.adjust(2)
 
     # Add search button in category menu
     kb.row(types.InlineKeyboardButton(text="🔍 Поиск", callback_data="search_menu"))
@@ -1502,12 +1314,9 @@ async def menu_catalog(message: Message):
     user_id = message.from_user.id
     active_users.add(user_id)
     kb = InlineKeyboardBuilder()
-    kb.button(text="Фрукты", callback_data="category_fruits")
-    kb.button(text="Овощи", callback_data="category_vegetables")
     kb.button(text="Напитки", callback_data="category_drinks")
-    kb.button(text="Снеки", callback_data="category_snacks")
     kb.button(text="Молочка", callback_data="category_milks")
-    kb.adjust(2,2,1)
+    kb.adjust(2)
 
     # Add search button in category menu
     kb.row(types.InlineKeyboardButton(text="🔍 Поиск", callback_data="search_menu"))
@@ -1586,8 +1395,7 @@ async def handle_review_text_input(message: Message, state: FSMContext):
     if delivery_order:
         # Delivery review
         review_message_to_admin = (
-            f"📊 <b>Отзыв о доставке от {user_mention}</b>\n"
-            f"<b>Заказ:</b> #{delivery_order}\n"
+            f"📊 <b>Отзыв о доставке от {user_mention}</b>\n            f"<b>Заказ:</b> #{delivery_order}\n"
             f"<b>Оценка:</b> {'⭐' * rating if isinstance(rating, int) else rating}\n"
             f"<b>Отзыв:</b>\n{review_text}"
         )
