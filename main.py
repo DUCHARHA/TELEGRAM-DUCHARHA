@@ -1395,7 +1395,8 @@ async def handle_review_text_input(message: Message, state: FSMContext):
     if delivery_order:
         # Delivery review
         review_message_to_admin = (
-            f"📊 <b>Отзыв о доставке от {user_mention}</b>\n            f"<b>Заказ:</b> #{delivery_order}\n"
+            f"📊 <b>Отзыв о доставке от {user_mention}</b>\n"
+            f"<b>Заказ:</b> #{delivery_order}\n"
             f"<b>Оценка:</b> {'⭐' * rating if isinstance(rating, int) else rating}\n"
             f"<b>Отзыв:</b>\n{review_text}"
         )
